@@ -5354,7 +5354,7 @@ export async function apply(ctx) {
       turnOrchestrator,
       worldBooks,
     })
-    registerCardVisualReferenceTool({ tools, chatForSession, readCardWorkspace, turnOrchestrator, activeTurnOf, attachments: () => ctx.get('attachments') })
+    registerCardVisualReferenceTool({ tools, chatForSession, readCardWorkspace, turnOrchestrator, activeTurnOf, attachments: () => ctx.get('attachments'), generateReference: sceneIllustrations ? input => sceneIllustrations.generateCardReference(input) : undefined })
   }
 
   try {

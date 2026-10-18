@@ -749,6 +749,27 @@ export function createSceneIllustrations(deps) {
   }
   // An explicit, paid check of the saved channel: one fixed picture, shown
   // once and never kept. It waits in the same queue as story pictures.
+  async function generateCardReference({ name, prompt, signal }) {
+    if (typeof name !== 'string' || !name.trim() || name.length > 100 || typeof prompt !== 'string' || !prompt.trim() || prompt.length > 12000) throw new Error('请提供人物名称和完整生图描述（最多 12000 字符）')
+    const { active, apiKey } = await capture()
+    if (!active.enabled || !channelReady(active, apiKey)) throw new Error('请先开启并配置场景生图')
+    const controller = new AbortController()
+    const abort = () => controller.abort(signal.reason)
+    signal?.addEventListener('abort', abort, { once: true })
+    if (signal?.aborted) abort()
+    const timer = setTimeout(() => controller.abort(), deps.timeoutMs || 300000)
+    try {
+      const profile = imageExpressionProfile(active)
+      const plan = applyImageStyle({ profile, description: name + '参考图', subjects: ['person'], people: [{ id: 'person', name }],
+        blocks: [{ owner: 'person', field: 'appearance', text: prompt, tags: prompt }], prompt }, await styles.resolve(active.style, profile))
+      const result = await imageQueue.run({ requestId: 'card-reference-' + randomUUID(), signal: controller.signal }, () =>
+        imageModule.generate({ ...active, apiKey, plan, prompt: composeSceneImagePrompt(plan), referenceImages: [], signal: controller.signal, maxBytes: Math.min(deps.attachments()?.imageLimits?.maxImageBytes || 8 * 1024 * 1024, 8 * 1024 * 1024) }))
+      const attachment = result.attachment || await deps.attachments().saveImage({ data: result.data, mediaType: result.mediaType, name: name + '-reference' })
+      return { attachment, provider: active.provider, model: active.model }
+    } catch (error) {
+      throw new Error(redactImageError(error.message, apiKey) + '；不要自动重复请求生图，请先告知用户本次结果。')
+    } finally { clearTimeout(timer); signal?.removeEventListener('abort', abort) }
+  }
   async function testGenerate() {
     const { active, apiKey } = await capture()
     if (!channelReady(active, apiKey)) throw new Error('请先在设置中完成生图渠道配置（地址、模型或 API Key）')
@@ -896,7 +917,7 @@ export function createSceneIllustrations(deps) {
     if (!(record.plan.subjects || []).includes(input.personId)) throw new Error('人物不属于当前画面')
     return characterLooks.image(chat.id, input.personId, input.candidateId)
   }
-  return { settings, configure, looks, changeLook, readLookImage, readArtistPreview: setup.readArtistPreview, testConnection: connection.test, listModels: connection.models, testGenerate, status, start, autoGenerate, cancel, retrySave, readImage, exportImages, isAgentSession, undoAgentTurn, removeImage, setReference, history, readStoredImage, removeStoredImages,
+  return { settings, configure, generateCardReference, looks, changeLook, readLookImage, readArtistPreview: setup.readArtistPreview, testConnection: connection.test, listModels: connection.models, testGenerate, status, start, autoGenerate, cancel, retrySave, readImage, exportImages, isAgentSession, undoAgentTurn, removeImage, setReference, history, readStoredImage, removeStoredImages,
     async dispose() { for (const job of jobs.values()) job.controller.abort(); await Promise.allSettled([...jobs.values()].map(job => job.promise)); await characterLooks.dispose(); imageHosts.delete(ownerId); imageAborters.delete(ownerId) }
   }
 }

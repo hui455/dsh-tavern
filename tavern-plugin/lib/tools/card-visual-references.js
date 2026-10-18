@@ -3,12 +3,14 @@ import { normalizeResourcePath } from '../domain/file-resources.js'
 import { sessionEvents } from '../domain/session-events.js'
 import { visualReferenceDocument, referenceSummary, updateVisualReferences, sessionReferenceImages, decodeReferenceImage } from '../domain/card-visual-references.js'
 
-export function registerCardVisualReferenceTool({ tools, chatForSession, readCardWorkspace, turnOrchestrator, activeTurnOf, attachments }) {
+export function registerCardVisualReferenceTool({ tools, chatForSession, readCardWorkspace, turnOrchestrator, activeTurnOf, attachments, generateReference }) {
   tools.register(defineTool({
     name: 'tavern_character_reference',
     description: '卡片工作台的人物参考资料工具。list 列出现有参考和本对话可用图片编号；read 读取指定人物的外貌文字及参考图，图片会返回给模型查看。用户要求保存时用 upsert 添加/修改参考文字、英文标签或 imageId 指定的本会话图片；资料随人物卡保存和导出。没有参考不影响默认生图。用户要求根据参考修改人物描述时，先 read 查看，再用 update_description 提交新的完整 description 与原 expectedDescription；也可在 upsert 同时提交这两个字段，原子保存参考和描述。不要臆造图片编号，不自动修改世界书或 MVU。',
     parameters: {
-      action: { type: 'string', required: true, enum: ['list', 'read', 'upsert', 'remove', 'update_description'] },
+      action: { type: 'string', required: true, enum: ['list', 'read', 'generate', 'upsert', 'remove', 'update_description'] },
+      prompt: { type: 'string', description: 'generate 必填：完整人物参考图描述。须同时提供 text 稳定外貌文字；生成成功后自动保存图片、文字和提示词。仅用户要求生图时调用，一次一人；保存失败只重试保存。' },
+      generationPrompt: { type: 'string', description: '保存已有生成图片时保留的完整生图提示词，generate 自动填写' },
       path: { type: 'string', description: '人物卡路径，省略为当前卡' },
       name: { type: 'string', description: '卡内人物名称，应与剧情中姓名一致' },
       text: { type: 'string', description: '稳定外貌参考文字；不是本轮动作' },
@@ -32,6 +34,24 @@ export function registerCardVisualReferenceTool({ tools, chatForSession, readCar
       if (!workspace) throw new Error('请先创建或选择人物卡')
       const document = visualReferenceDocument(workspace)
       const available = sessionReferenceImages(sessionEvents(exec.agent.session))
+      if (args.action === 'generate') {
+        if (!generateReference) throw new Error('当前未启用人物参考生图服务')
+        if (typeof args.text !== 'string' || !args.text.trim() || args.text.length > 4000) throw new Error('生成参考图时须同时提供稳定外貌文字 text（最多 4000 字符）')
+        updateVisualReferences(workspace, { ...args, action: 'upsert', expectedRevision: document.revision })
+        const result = await generateReference({ name: args.name, prompt: args.prompt, signal: exec.signal })
+        let saved = false, saveError, revision
+        try {
+          const image = await attachments().readImage(result.attachment)
+          const latest = await readCardWorkspace(path)
+          const next = updateVisualReferences(latest, { action: 'upsert', name: args.name, text: args.text, tags: args.tags,
+            generationPrompt: args.prompt, expectedRevision: document.revision }, image)
+          const write = await turnOrchestrator.saveChanges({ sessionId, turn: activeTurnOf(exec), path, fields: {}, rawOperations: [next.operation] })
+          saved = write.saved; revision = next.document.revision
+        } catch (error) { saveError = error.message }
+        return JSON.stringify({ generated: true, saved, saveError, revision, name: args.name, imageId: result.attachment.attachmentId, generationPrompt: args.prompt,
+          provider: result.provider, model: result.model, images: [result.attachment],
+          instruction: saved ? '参考图、外貌文字和生图提示词已一并保存。' : '图片已生成但保存失败。调用 list 获取最新 revision，再用 upsert 保存这个 imageId、text 和 generationPrompt；只重试保存，不要重新生图。' })
+      }
       if (args.action === 'list' || args.action === 'read') {
         const result = { path, ...referenceSummary(document), availableImages: available.map(({ attachmentId, name, mediaType }) => ({ attachmentId, name, mediaType })) }
         if (args.action === 'read') {

@@ -1,4 +1,5 @@
 【当前 Tavern 资源工作区】
+- 用户要求画人物参考图时，可以调用 `tavern_character_reference` 的 generate 操作（name + prompt + text 稳定外貌文字），使用已配置的生图服务，一次画一个人物。生成结果直接显示在本对话，并自动保存图片、外貌文字和完整生图提示词；saved 为 false 时才用 list/upsert 补存，不能重新生图。多人逐个完成生成和保存。不能只写标签就宣称已生图，不能因为没有 generate_image 工具就说没有生图能力。失败时报告实际错误，不自动重复生图；图片已生成而保存失败时只重试保存。该操作是文生图，不能宣称对已有图片进行了图生图编辑。
 - 资源根目录：{{resourceRoot}}
 - 资源在 Tavern 界面、结构化引用和 Tavern 工具参数中仍使用 `materials/...`、`presets/...`、`cards/...` 等相对路径。
 - 调用文件编辑工具（`read`、`edit`、`write` 或 `str_replace_editor`）时，路径参数必须使用绝对路径：将上面的资源根目录与资源相对路径连接。

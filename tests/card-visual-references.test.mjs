@@ -3,6 +3,9 @@ import assert from 'node:assert/strict'
 import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { createServer } from 'node:http'
+import { createSceneIllustrations } from '../tavern-plugin/lib/domain/scene-illustration.js'
+import { createProfileDataStore } from '../tavern-plugin/lib/profile-data-store.js'
 import { createCardPreparation } from '../tavern-plugin/lib/domain/card-preparation.js'
 import { createTurnOrchestrator } from '../tavern-plugin/lib/domain/turn-orchestration.js'
 import { createForegroundFrameBuilder } from '../tavern-plugin/lib/domain/agent-input-frame.js'
@@ -24,7 +27,23 @@ test('card tool writes portable references and reverse edits through real card p
       return { ...result, card: result.view }
     } }
   const orchestrator = createTurnOrchestrator({ store, cards, frameBuilder: createForegroundFrameBuilder() }), tools = new Map()
+  const requests = []
+  const server = createServer(async (req, res) => {
+    let body = ''; for await (const chunk of req) body += chunk
+    requests.push({ path: req.url, body: JSON.parse(body) })
+    res.setHeader('content-type', 'application/json')
+    res.end(JSON.stringify({ data: [{ b64_json: png.toString('base64') }] }))
+  })
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  t.after(() => { server.closeAllConnections(); server.close() })
+  const service = createSceneIllustrations({ store: createProfileDataStore({ dataRoot: join(root, 'data') }),
+    credentials: () => ({ resolve: async () => ({ value: 'fixture-key' }), set: async () => {} }),
+    attachments: () => ({ saveImage: async () => ({ attachmentId: 'generated-image', mediaType: 'image/png' }) }) })
+  t.after(() => service.dispose())
+  await service.configure({ provider: 'openai', model: 'test-image', baseURL: `http://127.0.0.1:${server.address().port}/v1`, apiKey: 'fixture-key' })
+  await service.configure({ enabled: true })
   registerCardVisualReferenceTool({ tools: { register: tool => tools.set(tool.name, tool) }, chatForSession: store.chatForSession, readCardWorkspace: read,
+    generateReference: input => service.generateCardReference(input),
     turnOrchestrator: orchestrator, activeTurnOf: () => 1, attachments: () => ({ readImage: async () => ({ data: png }), saveImage: async () => ({ attachmentId: 'stored-image', mediaType: 'image/png' }) }) })
   const tool = tools.get('tavern_character_reference'), exec = { agent: { session: { id: 'workbench', events: [{ type: 'user/message', data: { message: { content: [{ type: 'image', attachment: { attachmentId: 'uploaded-image', mediaType: 'image/png' } }] } } }] } } }
   const call = async args => JSON.parse(await tool.execute(args, exec))
@@ -44,9 +63,30 @@ test('card tool writes portable references and reverse edits through real card p
   assert.equal(exported.data.description, '成年女性，银色短发。性格沉稳。')
   assert.equal(exported.data.extensions.unrelated.keep, true)
   assert.equal(visualReferenceDocument(exported).characters[0].image.base64, png.toString('base64'))
+  await assert.rejects(call({ action: 'generate', name: '林岚', text: '成年女性，银色短发', prompt: '' }), /完整生图描述/)
+  const generated = await tool.execute({ action: 'generate', name: '林岚', text: '成年女性，银色短发', prompt: 'Adult woman, short silver hair, neutral background, portrait' }, exec)
+  const generatedResult = JSON.parse(generated)
+  assert.equal(generatedResult.saved, true)
+  const autoSaved = visualReferenceDocument(await read()).characters[0]
+  assert.equal(autoSaved.text, '成年女性，银色短发')
+  assert.match(autoSaved.generationPrompt, /short silver hair/)
+  assert.ok(autoSaved.image)
+  assert.equal(requests.length, 1)
+  assert.equal(requests[0].path, '/v1/images/generations')
+  assert.match(requests[0].body.prompt, /short silver hair/)
+  exec.agent.session.events.push({ type: 'tool/result', data: { content: tool.output.render({}, generated) } })
+  const current = await call({ action: 'list' })
+  assert.ok(current.availableImages.some(image => image.attachmentId === generatedResult.imageId))
+  await call({ action: 'upsert', name: '林岚', imageId: generatedResult.imageId, expectedRevision: current.revision })
+  assert.deepEqual(decodeReferenceImage(visualReferenceDocument(await read()).characters[0].image).data, png)
+  await assert.rejects(call({ action: 'upsert', name: '林岚', imageId: generatedResult.imageId, expectedRevision: current.revision }), /已变化/)
+  assert.equal(requests.length, 1, 'save conflicts never regenerate')
+  await service.configure({ enabled: false })
+  await assert.rejects(call({ action: 'generate', name: '林岚', text: '成年女性，银色短发', prompt: 'portrait' }), /开启并配置/)
   chat.mode = 'story'
   assert.ok(!(await orchestrator.visibleTools('workbench')).includes(tool.name))
   await assert.rejects(call({ action: 'list' }), /卡片工作台/)
+  await assert.rejects(call({ action: 'generate', name: '林岚', text: '成年女性，银色短发', prompt: 'portrait' }), /卡片工作台/)
 })
 
 test('card references use images only on supported channels, preserve default plans and ignore malformed images', () => {

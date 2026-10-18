@@ -37,7 +37,7 @@ export function updateVisualReferences(workspace, input, image) {
   if (input.action === 'remove') doc.characters = doc.characters.filter(person => person.name !== name)
   else {
     const next = { ...(existing || {}), name }
-    for (const [field, limit] of [['text', 4000], ['tags', 4000]]) if (input[field] !== undefined) {
+    for (const [field, limit] of [['text', 4000], ['tags', 4000], ['generationPrompt', 12000]]) if (input[field] !== undefined) {
       if (typeof input[field] !== 'string' || input[field].length > limit) throw new Error(field + ' 必须为不超过 ' + limit + ' 字符的文字')
       next[field] = input[field].trim()
     }
