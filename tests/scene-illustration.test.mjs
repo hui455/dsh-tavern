@@ -602,3 +602,59 @@ test('每轮自动生图：默认关闭；打开后结算完的新一轮自动�
   await fx.service.configure({ auto: false })
   assert.equal((await fx.service.settings()).auto, false)
 })
+
+for (const failSecond of [false, true]) test('scene sequence generates distinct scenes once and stops on failed image: ' + failSecond, async t => {
+  const requests = [], inputs = []
+  const fx = await fixture(t, { generate: async input => {
+    requests.push(input)
+    if (failSecond && requests.length === 2) throw new Error('provider unavailable')
+    return { data: png, mediaType: 'image/png' }
+  }, runAgent: async input => {
+    const data = JSON.parse(input.messages[0].content[0].text); inputs.push(data)
+    const plan = planFixture('scene detail, NSFW')
+    plan.anchor = data.addition ? (data.addition.request.includes('雨停了。') ? '雨停了。' : '她走到花园。') : '她站在窗边看雨。'
+    plan.viewpoint = 'first-person'
+    if (data.sequence) plan.additionalScenes = [
+      { anchor: '她走到花园。', description: '花园里的空间关系', viewpoint: 'omniscient' },
+      { anchor: '雨停了。', description: '从她眼中看到雨停后的花园', viewpoint: 'first-person' }
+    ]
+    await submitPlanCall(input, { arguments: { plan } })
+  } })
+  fx.chat().messages[1].sourceText = '她站在窗边看雨。她走到花园。雨停了。'
+  fx.chat().messages[1].swipes[0] = fx.chat().messages[1].sourceText
+  await fx.service.configure({ auto: true, nsfw: true })
+  assert.equal((await fx.service.settings()).nsfw, true)
+  await assert.rejects(fx.service.configure({ nsfw: 'yes' }), /布尔/)
+  const state = await fx.service.autoGenerate('parent')
+  await until(async () => { const s = await fx.service.status('parent', 2); return !s.sequenceRunning && s.extras.length && s })
+  assert.equal(requests.length, failSecond ? 2 : 3)
+  assert.equal(inputs[0].sequence.maxPictures, 6)
+  assert.equal(inputs[0].contentPreference.adultContentEnabled, true)
+  assert.match(requests[0].prompt, /First-person/)
+  assert.match(requests[1].prompt, /omniscient/)
+  assert.ok(requests.every(input => !/\bnsfw\b/i.test(input.prompt)))
+  const done = await fx.service.status('parent', 2)
+  assert.equal(done.extras[0].status, failSecond ? 'failed' : 'succeeded')
+  await fx.service.autoGenerate('parent')
+  assert.equal(requests.length, failSecond ? 2 : 3)
+  const restarted = fx.createService()
+  assert.equal((await restarted.settings()).nsfw, true)
+  assert.equal(await restarted.autoGenerate('parent'), null)
+})
+
+test('manual extra image viewpoint reaches planner and overrides its camera choice', async t => {
+  const requests = [], inputs = []
+  const fx = await fixture(t, { generate: async input => { requests.push(input); return { data: png, mediaType: 'image/png' } }, runAgent: async input => {
+    inputs.push(JSON.parse(input.messages[0].content[0].text))
+    await submitPlanCall(input, { arguments: { plan: { ...planFixture(), viewpoint: 'first-person' } } })
+  } })
+  const key = sceneTarget(fx.chat(), 2).key
+  await fx.service.start('parent', 2, key)
+  await until(async () => (await fx.service.status('parent', 2)).status === 'succeeded')
+  await fx.service.start('parent', 2, key, { kind: 'add', viewpoint: 'omniscient' })
+  await until(async () => (await fx.service.status('parent', 2)).extras[0]?.status === 'succeeded')
+  assert.equal(inputs[1].camera.requested, 'omniscient')
+  assert.equal(inputs[1].sequence, undefined)
+  assert.match(requests[1].prompt, /omniscient/)
+  await assert.rejects(fx.service.start('parent', 2, key, { kind: 'add', viewpoint: 'invalid' }), /视角/)
+})

@@ -85,7 +85,7 @@ export function createScenePlans({ store }) {
     return { chatId, target, profile, styleNeeded, previousStyle, replace: replan, generation: data.generation, sources, people, identities, takenIds, previousScene, previousTurn: previous?.turn, previousMoment: previous?.moment || 'end', gapComplete, input, saved, block }
   }
   async function commit(prepared, submission) {
-    keys(submission, ['description', 'characters', 'subjects', 'scene', 'continuity', 'expressions', 'moment', 'orientation', 'aspectRatio', 'negative', 'anchor', 'style', 'views'], 'plan')
+    keys(submission, ['description', 'characters', 'subjects', 'scene', 'continuity', 'expressions', 'moment', 'orientation', 'aspectRatio', 'viewpoint', 'viewpointReason', 'additionalScenes', 'negative', 'anchor', 'style', 'views'], 'plan')
     const moment = submission.moment ?? 'end', orientation = submission.orientation ?? ''
     assert(['end', 'earlier'].includes(moment), 'moment 必须是 end 或 earlier')
     assert(['', 'portrait', 'landscape', 'square'].includes(orientation), 'orientation 必须是 portrait、landscape 或 square')
@@ -103,6 +103,20 @@ export function createScenePlans({ store }) {
     // text is dropped silently; the picture then stays after the text.
     const anchorText = text(submission.anchor ?? '', 'anchor', 200)
     const anchor = anchorText && pluginAnchorInsertion(prepared.sources.find(item => item.id === 'target')?.text || '', anchorText) >= 0 ? anchorText : ''
+    const viewpoint = submission.viewpoint || 'first-person'
+    assert(['first-person', 'omniscient'].includes(viewpoint), 'viewpoint 必须是 first-person 或 omniscient')
+    const viewpointReason = text(submission.viewpointReason || '', 'viewpointReason', 300)
+    const additionalScenes = submission.additionalScenes || []
+    assert(Array.isArray(additionalScenes) && additionalScenes.length <= 5, 'additionalScenes 最多 5 个补充场景')
+    const anchors = new Set([anchor].filter(Boolean))
+    for (const item of additionalScenes) {
+      keys(item, ['anchor', 'description', 'viewpoint'], 'additionalScenes')
+      const a = text(item.anchor, 'additionalScenes.anchor', 200)
+      assert(a && !anchors.has(a) && pluginAnchorInsertion(prepared.sources.find(s => s.id === 'target')?.text || '', a) >= 0, '补充场景 anchor 必须是正文中未重复的原句')
+      assert(text(item.description, 'additionalScenes.description', 500).trim(), '补充场景 description 不能为空')
+      assert(['first-person', 'omniscient'].includes(item.viewpoint), '补充场景 viewpoint 无效')
+      anchors.add(a)
+    }
     assert(['continued', 'changed', 'uncertain'].includes(submission.continuity), 'continuity 必须是 continued、changed 或 uncertain')
     assert(submission.continuity !== 'continued' || prepared.gapComplete, '期间剧情有裁剪，不能确认 continued；请使用 uncertain 并按当前依据重建动态状态')
     assert(Array.isArray(submission.characters) && submission.characters.length <= 8, 'characters 必须是最多 8 项的数组')
@@ -232,7 +246,7 @@ export function createScenePlans({ store }) {
     assert(prompt.trim() && prompt.length <= 12000, '组合提示词为空或超过 12000 字符')
     // An earlier moment of the turn is drawn from its own text; the next image
     // re-reads the rest of that turn instead of continuing from this frame.
-    const frame = { targetKey: prepared.target.key, turn: prepared.target.turn, profile: prepared.profile, description, subjects, scene, characterRefs: Object.keys(characterVersions), blockIds, prompt,
+    const frame = { targetKey: prepared.target.key, turn: prepared.target.turn, profile: prepared.profile, description, subjects, scene, viewpoint, viewpointReason, additionalScenes: structuredClone(additionalScenes), characterRefs: Object.keys(characterVersions), blockIds, prompt,
       ...(moment === 'earlier' ? { moment } : {}), ...(orientation ? { orientation } : {}), ...(aspectRatio ? { aspectRatio } : {}), ...(negative ? { negative } : {}), ...(anchor ? { anchor } : {}), ...(Object.keys(views).length ? { views: { ...views } } : {}), ...(artStyle ? { artStyle: { text: artStyle.text, tags: artStyle.tags } } : {}) }
     frame.id = digest(frame)
     await store.updateJson(pathFor(prepared.chatId), previous => {

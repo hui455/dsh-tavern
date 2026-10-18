@@ -341,6 +341,7 @@
 				const [promptDraft, setPromptDraft] = React.useState(null);
 				const [referenceDraft, setReferenceDraft] = React.useState(null);
 				const [addDraft, setAddDraft] = React.useState(null);
+                const [addViewpoint, setAddViewpoint] = React.useState("auto");
 				const requestRef = React.useRef(null);
 				const addRequestRef = React.useRef(null);
 				const versions = state && state.versions || [];
@@ -403,12 +404,12 @@
 				async function addPicture() {
 					if (busy || !state || !state.enabled) return;
 					const text = (addDraft || "").trim();
-					const signature = state.key + ":" + text;
+					const signature = state.key + ":" + addViewpoint + ":" + text;
 					if (!addRequestRef.current || addRequestRef.current.signature !== signature) addRequestRef.current = { signature: signature, id: sceneImageRequestId() };
 					recordImageInteraction(props.sessionId, props.turn, addRequestRef.current.id, "click");
 					setBusy(true); setError("");
 					try {
-						await rpc("generateSceneImage", { turn: props.turn, key: state.key, kind: "add", instruction: text, requestId: addRequestRef.current.id }, props.sessionId);
+						await rpc("generateSceneImage", { turn: props.turn, key: state.key, kind: "add", instruction: text, viewpoint: addViewpoint, requestId: addRequestRef.current.id }, props.sessionId);
 						addRequestRef.current = null; setAddDraft(null);
 					} catch (e) { setError(String(e.message || e)); }
 					finally { setBusy(false); notify(); }
@@ -453,7 +454,7 @@
 						state.enabled ? React.createElement(React.Fragment, null,
 							React.createElement("button", { type: "button", className: "dsh-tavern-btn", disabled: locked, onClick: function () { setPromptDraft(null); setAddDraft(null); setAdjusting(true); } }, "重画"),
 							React.createElement("button", { type: "button", className: "dsh-tavern-btn", title: "自己写这张图的提示词再画，任意语言都可以，不经过文字模型", disabled: locked, onClick: function () { setAdjusting(false); setAddDraft(null); setPromptDraft(version.planPrompt || ""); } }, "改提示词"),
-							props.canAdd ? React.createElement("button", { type: "button", className: "dsh-tavern-btn", title: "为这一轮另选一个场景，再加一张插图", disabled: busy, onClick: function () { setAdjusting(false); setPromptDraft(null); setAddDraft(""); } }, "新增插图") : null
+							props.canAdd ? React.createElement("button", { type: "button", className: "dsh-tavern-btn", title: "为这一轮另选一个场景，再加一张插图", disabled: busy || state.sequenceRunning, onClick: function () { setAdjusting(false); setPromptDraft(null); setAddDraft(""); } }, "新增插图") : null
 						) : null
 					) : null,
 					!version && state.slot && state.status !== "running" && state.recovery !== "save" ? React.createElement("div", { className: "dsh-tavern-image-actions" },
@@ -461,6 +462,10 @@
 						React.createElement("button", { type: "button", className: "dsh-tavern-btn", disabled: busy, onClick: dismiss }, "移除")
 					) : null,
 					addDraft !== null && state.enabled ? React.createElement("div", { className: "dsh-tavern-image-adjust dsh-tavern-image-repaint", role: "region", "aria-label": "新增插图" },
+                        React.createElement("label", null, "插图视角", React.createElement("select", { "aria-label": "插图视角", value: addViewpoint, disabled: busy, onChange: function (event) { setAddViewpoint(event.target.value); } },
+                            React.createElement("option", { value: "auto" }, "自动判断（单角色默认第一人称）"),
+                            React.createElement("option", { value: "first-person" }, "用户第一人称"),
+                            React.createElement("option", { value: "omniscient" }, "上帝视角"))),
 						React.createElement("textarea", { value: addDraft, maxLength: 2000, rows: 2, autoFocus: true, "aria-label": "新插图想画什么（选填）", placeholder: "想画哪个场景？例如：她转身离开时的背影。留空由 AI 另选一个不同的场景", onChange: function (event) { setAddDraft(event.target.value); }, onKeyDown: function (event) {
 							if (event.key === "Escape" && !busy) setAddDraft(null);
 							else if (event.key === "Enter" && (event.metaKey || event.ctrlKey) && !busy) { event.preventDefault(); addPicture(); }
@@ -471,7 +476,9 @@
 					) : null,
 					canBindReference || referenceBindings.length ? React.createElement("button", { type: "button", className: "dsh-tavern-btn", disabled: locked, onClick: openReference }, referenceBindings.length ? "管理造型参考" : "用作造型参考") : null,
 					version && state.enabled && version.profile && version.profile !== state.profile ? React.createElement("span", { role: "status" }, "将按新渠道重新整理画面，可能产生文字模型费用。") : null,
-					state.referenceWarning || state.reference && state.reference.warning ? React.createElement("span", { role: "status" }, state.referenceWarning || state.reference.warning) : null,
+					state.sequenceError ? React.createElement("span", { role: "status" }, "后续插图已停止：" + state.sequenceError) : null,
+                    state.sequenceRunning ? React.createElement("span", { role: "status" }, "正在按场景需要生成本轮插图…") : null,
+                    state.referenceWarning || state.reference && state.reference.warning ? React.createElement("span", { role: "status" }, state.referenceWarning || state.reference.warning) : null,
 					showReference ? React.createElement("div", { className: "dsh-tavern-image-adjust dsh-tavern-image-reference", role: "region", "aria-label": "造型参考" },
 						canBindReference ? React.createElement(React.Fragment, null,
 							React.createElement("label", null, "参考人物", React.createElement("select", { value: referenceDraft.personId, disabled: locked, onChange: function (event) { setReferenceDraft(Object.assign({}, referenceDraft, { personId: event.target.value })); } },

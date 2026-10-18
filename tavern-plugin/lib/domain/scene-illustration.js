@@ -131,6 +131,8 @@ function sceneSources(chat, target, snapshot, sinceTurn = target.turn) {
 export function createSceneIllustrations(deps) {
   const ownerId = randomUUID()
   const jobs = new Map()
+  const sequences = new Map()
+  let disposed = false
   const starts = new Map()
   const diagnosticSecrets = new Map()
   const diagnostics = deps.diagnostics || createSceneImageDiagnostics(deps.store)
@@ -217,7 +219,7 @@ export function createSceneIllustrations(deps) {
   function present(target, record) {
     const { attachment, savedAttachment, diagnostics, diagnosticContext, providerRequests, referenceImages, plan, requests, versions, deletedVersions, ownerId, ownerPid, ...publicRecord } = record || {}
     const configuration = value => value?.workflow ? { ...value, workflow: { name: value.workflow.name, digest: value.workflow.digest } } : value
-    return { key: target.key, turn: target.turn, status: 'idle', ...publicRecord, hasDeletedImages: Boolean(deletedVersions?.length), ...(publicRecord.configuration ? { configuration: configuration(publicRecord.configuration) } : {}), versions: versionsOf(record).map(({ attachment, plan, ...item }) => ({ ...item, configuration: configuration(item.configuration), description: plan?.description || '', planPrompt: plan?.prompt || '', style: styleLabel(plan), profile: plan?.profile || '', anchor: plan?.anchor || '', moment: plan?.moment || 'end', composition: plan?.scene?.composition?.text || '',
+    return { key: target.key, turn: target.turn, status: 'idle', ...publicRecord, hasDeletedImages: Boolean(deletedVersions?.length), ...(publicRecord.configuration ? { configuration: configuration(publicRecord.configuration) } : {}), versions: versionsOf(record).map(({ attachment, plan, ...item }) => ({ ...item, configuration: configuration(item.configuration), description: plan?.description || '', planPrompt: plan?.prompt || '', style: styleLabel(plan), profile: plan?.profile || '', viewpoint: plan?.viewpoint || '', anchor: plan?.anchor || '', moment: plan?.moment || 'end', composition: plan?.scene?.composition?.text || '',
       referencePeople: imageReferencePeople({ plan }),
       referenceSingle: plan?.subjects?.length === 1 && imageReferencePeople({ plan }).length === 1,
       referencePerson: plan?.people?.length === 1 && plan.subjects?.length === 1 && imageReferencePeople({ plan }).length === 1 ? plan.people[0].name : '' })) }
@@ -249,7 +251,7 @@ export function createSceneIllustrations(deps) {
       if (!record || !versionsOf(record).length && record.status === 'idle' && record.recovery !== 'save') continue
       extras.push({ ...present(extra, record), slot, ...shared, reference: referenceOf(extra.key) })
     }
-    return { ...present(target, await readRecord(path)), ...shared, reference: referenceOf(target.key), extras, maxPictures: SCENE_EXTRA_SLOTS + 1 }
+    return { ...present(target, await readRecord(path)), ...shared, sequenceRunning: sequences.has(path), reference: referenceOf(target.key), extras, maxPictures: SCENE_EXTRA_SLOTS + 1 }
   }
   // 「每轮自动生图」: once a new round has settled, draw it once. Never redraws a
   // round that already has a picture, one the player deleted, one in progress,
@@ -268,7 +270,7 @@ export function createSceneIllustrations(deps) {
     if (!(latest >= 2)) return null
     const state = await status(sessionId, latest)
     if (!state.key || state.status !== 'idle' || state.versions.length || state.hasDeletedImages || state.recovery === 'save' || state.outcome === 'unconfirmed') return null
-    return start(sessionId, latest, state.key, { kind: 'generate', requestId: 'auto-' + state.key.slice(0, 48) })
+    return start(sessionId, latest, state.key, { kind: 'generate', sequenceAuto: true, requestId: 'auto-' + state.key.slice(0, 48) })
   }
   async function setReference(sessionId, turn, key, versionId, consent, enabled = true, personId) {
     const { chat, target, path } = await resolve(sessionId, turn, undefined, key)
@@ -360,6 +362,7 @@ export function createSceneIllustrations(deps) {
       existing, ...(request ? { request } : {}) }
   }
   async function start(sessionId, turn, expectedKey, options = {}) {
+    if (!['auto', 'first-person', 'omniscient'].includes(options.viewpoint || 'auto')) throw new Error('请选择有效的插图视角')
     const adding = options.kind === 'add'
     const kind = adding ? 'generate' : options.kind || 'generate'
     if (!['generate', 'replan', 'repaint', 'adjust', 'prompt'].includes(kind)) throw new Error('未知生图操作')
@@ -385,6 +388,7 @@ export function createSceneIllustrations(deps) {
     if (starts.has(path)) return starts.get(path)
     const starting = (async () => {
       const existing = await readRecord(path)
+      const viewpoint = options.viewpoint ?? existing?.viewpoint ?? 'auto'
       if (existing?.recovery === 'save') throw new Error('图片已生成，请先重试保存；不会再次请求图片渠道')
       // Retrying an added picture keeps the user's wish for that scene.
       const sceneRequest = target.slot ? (adding ? addRequest : String(existing?.addRequest || '')) : ''
@@ -457,6 +461,11 @@ export function createSceneIllustrations(deps) {
             ...(rejected ? { rejected: { description: rejected.description || '', moment: rejected.moment || 'end', composition: rejected.scene?.composition?.text || '' } } : {}) } }
         }
       }
+      const sequence = !target.slot && kind === 'generate' && options.sequence !== false
+      const targetMessages = (designSnapshot || chat).messages || []
+      const targetIndex = targetMessages.findIndex(message => message.role === 'assistant' && Number(message.turn || 1) === target.turn)
+      const playerMessage = (targetIndex >= 0 ? targetMessages.slice(0, targetIndex) : []).reverse().find(message => message.role === 'user')
+      if (prepared.input) prepared.input = { ...prepared.input, playerRequest: String(playerMessage?.sourceText || playerMessage?.text || '').slice(0, 2000), camera: { requested: viewpoint, player: chat.playerName || chat.userName || '用户角色', instruction: '单角色控制默认第一人称；必要时补充上帝视角。多角色、阵营或世界控制题材按需采用上帝视角；不得硬把用户画成某个人。手动 requested 优先。' }, contentPreference: { adultContentEnabled: active.nsfw === true, instruction: '仅控制内容取舍，不要将 NSFW 字样或控制字段写进画面描述。开启不代表要把普通场景成人化。' }, ...(sequence ? { sequence: { maxPictures: SCENE_EXTRA_SLOTS + 1, instruction: '先判断本轮是否需要多图。主图之外，仅不同地点、时间、关键动作或有价值的补充视角才提交 additionalScenes；无需补图则空数组。每项以目标正文不同原句为 anchor，不重复同一构图。' } } : {}) }
       const expressionGuidance = imageExpressionGuidance(active)
       if (providerTask) prepared.saved = existing.plan
       if (prepared.input && expressionGuidance) prepared.input = { ...prepared.input, expressionGuidance }
@@ -472,7 +481,7 @@ export function createSceneIllustrations(deps) {
         if (Object.hasOwn(current?.requests || {}, requestId) || kind === 'generate' && current?.status === 'succeeded' || current?.status === 'running' && ownerIsLive(current, path)) return current
         checkPurchaseConfirmation(current, options)
         claimed = true
-        return { key: target.key, turn: target.turn, ...(target.slot ? { slot: target.slot, addRequest: sceneRequest } : {}), status: 'running', outcome: providerTask ? 'unconfirmed' : 'not_requested', stage: prepared.saved ? 'generating' : 'planning', kind, instruction, baseVersionId: options.versionId || '', createdAt: Date.now(), requestId, ownerId, ownerPid: process.pid, error: '', ...(providerTask ? { providerTask } : {}),
+        return { key: target.key, turn: target.turn, ...(target.slot ? { slot: target.slot, addRequest: sceneRequest } : {}), status: 'running', outcome: providerTask ? 'unconfirmed' : 'not_requested', stage: prepared.saved ? 'generating' : 'planning', kind, instruction, viewpoint, baseVersionId: options.versionId || '', createdAt: Date.now(), requestId, ownerId, ownerPid: process.pid, error: '', ...(providerTask ? { providerTask } : {}),
           ...(!adjustment && !prepared.saved ? { draftBinding, planDraft: current?.draftBinding === draftBinding ? current.planDraft : undefined } : {}),
           versions: versionsOf(current), deletedVersions: current?.deletedVersions || [], requests: { ...current?.requests, [requestId]: { status: 'running', ...(options.confirmNewRequestId ? { confirmedReplacementOf: options.confirmNewRequestId } : {}) } } }
       })
@@ -484,10 +493,38 @@ export function createSceneIllustrations(deps) {
       diagnosticSecrets.set(record.requestId, [apiKey])
       const job = { controller, requestId: record.requestId, promise: null }
       jobs.set(path, job)
-      job.promise = execute({ sessionId, chatId: chat.id, target, path, record, prepared, material, references, characterDesigns, selectedImageReferences, cardReferences, adjustment, basePlan, profile, styleOf, active, apiKey, selection, controller })
+      job.promise = execute({ sessionId, chatId: chat.id, target, path, record, prepared, material, references, characterDesigns, selectedImageReferences, cardReferences, adjustment, basePlan, profile, styleOf, active, apiKey, selection, controller, viewpoint })
         .finally(() => { jobs.delete(path); diagnosticSecrets.delete(record.requestId) })
       // Failure to persist a failure is reported locally, never as an unhandled rejection.
       job.promise.catch(() => deps.onStorageError?.())
+      if (sequence && !sequences.has(path)) {
+        const follow = job.promise.then(async () => {
+          const first = await readRecord(path)
+          if (first?.status !== 'succeeded') return
+          const scenes = first.plan?.additionalScenes || []
+          for (let index = 0; index < scenes.length; index++) {
+            if (disposed) break
+            const currentConfig = await config()
+            if (!currentConfig.enabled || options.sequenceAuto && !currentConfig.auto || currentConfig.nsfw !== active.nsfw) break
+            if (JSON.stringify(channelSettings(currentConfig)) !== JSON.stringify(channelSettings(active))) break
+            const current = await deps.chatForSession(sessionId)
+            if (!current || sceneTarget(current, turn).key !== base.key) break
+            const state = await status(sessionId, turn)
+            if (!state.versions.length || state.extras.some(item => ['failed', 'cancelled', 'running'].includes(item.status))) break
+            const scene = scenes[index]
+            const next = await start(sessionId, turn, base.key, { kind: 'add', sequence: false, viewpoint: scene.viewpoint,
+              instruction: '按已规划的场景配图：' + scene.description + '\n使用正文原句作为 anchor：' + scene.anchor,
+              requestId: 'sequence-' + hash(requestId + ':' + index).slice(0, 48) })
+            const nextPath = pathFor(chat.id, next.key)
+            await jobs.get(nextPath)?.promise
+            if ((await readRecord(nextPath))?.status !== 'succeeded') break
+          }
+        }).catch(async error => {
+          try { await deps.store.updateJson(path, current => ({ ...current, sequenceError: String(error.message || '后续场景已停止').slice(0, 500) })) }
+          catch { deps.onStorageError?.() }
+        }).finally(() => sequences.delete(path))
+        sequences.set(path, follow)
+      }
       return present(target, record)
     })()
     starts.set(path, starting)
@@ -514,8 +551,17 @@ export function createSceneIllustrations(deps) {
       const lookReferences = await characterLooks.apply(input.chatId, plan, active)
       const cardReference = applyCardVisualReferences(lookReferences.plan, input.cardReferences, active)
       plan = cardReference.plan
+      const viewpoint = input.viewpoint !== 'auto' ? input.viewpoint : plan.viewpoint || 'first-person'
+      plan = { ...plan, viewpoint, omitNsfwLabel: active.nsfw === true,
+        cameraPrompt: record.kind === 'prompt' ? '' : viewpoint === 'first-person' ? "First-person point of view through the player character's eyes. Frame what the player can see; do not show the player as a separate full-body subject." : 'Third-person omniscient establishing viewpoint, showing the scene and spatial relationships from outside.' }
+      if (active.nsfw) {
+        plan.blocks = (plan.blocks || []).map(block => ({ ...block, tags: block.tags?.replace(/\bnsfw\b/gi, '').trim() }))
+        if (plan.style) plan.style = { ...plan.style, tags: plan.style.tags?.replace(/\bnsfw\b/gi, '').trim() }
+        if (plan.styleOverride) plan.styleOverride = { ...plan.styleOverride, tags: plan.styleOverride.tags?.replace(/\bnsfw\b/gi, '').trim() }
+      }
       delete record.pendingCharacters
       plan = applyImageStyle(plan, await input.styleOf(plan))
+      if (active.nsfw && plan.style) plan = { ...plan, style: { ...plan.style, tags: plan.style.tags?.replace(/\bnsfw\b/gi, '').trim() } }
       const prompt = composeSceneImagePrompt(plan)
       record.planId = plan.id
       record.plan = plan
@@ -760,7 +806,7 @@ export function createSceneIllustrations(deps) {
     const timer = setTimeout(() => controller.abort(), deps.timeoutMs || 300000)
     try {
       const profile = imageExpressionProfile(active)
-      const plan = applyImageStyle({ profile, aspectRatio: aspectRatio || '3:4', description: name + '参考图', subjects: ['person'], people: [{ id: 'person', name }],
+      const plan = applyImageStyle({ profile, omitNsfwLabel: active.nsfw === true, aspectRatio: aspectRatio || '3:4', description: name + '参考图', subjects: ['person'], people: [{ id: 'person', name }],
         blocks: [{ owner: 'person', field: 'appearance', text: prompt, tags: prompt }], prompt }, await styles.resolve(active.style, profile))
       const result = await imageQueue.run({ requestId: 'card-reference-' + randomUUID(), signal: controller.signal }, () =>
         imageModule.generate({ ...active, apiKey, plan, prompt: composeSceneImagePrompt(plan), referenceImages: [], signal: controller.signal, maxBytes: Math.min(deps.attachments()?.imageLimits?.maxImageBytes || 8 * 1024 * 1024, 8 * 1024 * 1024) }))
@@ -918,6 +964,6 @@ export function createSceneIllustrations(deps) {
     return characterLooks.image(chat.id, input.personId, input.candidateId)
   }
   return { settings, configure, generateCardReference, looks, changeLook, readLookImage, readArtistPreview: setup.readArtistPreview, testConnection: connection.test, listModels: connection.models, testGenerate, status, start, autoGenerate, cancel, retrySave, readImage, exportImages, isAgentSession, undoAgentTurn, removeImage, setReference, history, readStoredImage, removeStoredImages,
-    async dispose() { for (const job of jobs.values()) job.controller.abort(); await Promise.allSettled([...jobs.values()].map(job => job.promise)); await characterLooks.dispose(); imageHosts.delete(ownerId); imageAborters.delete(ownerId) }
+    async dispose() { disposed = true; for (const job of jobs.values()) job.controller.abort(); await Promise.allSettled([...jobs.values()].map(job => job.promise)); await Promise.allSettled([...sequences.values()]); await characterLooks.dispose(); imageHosts.delete(ownerId); imageAborters.delete(ownerId) }
   }
 }

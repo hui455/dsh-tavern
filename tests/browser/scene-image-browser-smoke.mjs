@@ -62,7 +62,7 @@ const primitives={MarkdownText:props=>React.createElement('p',null,props.text),T
 window.__ModuleLoader__={load(d){window.client=d.factory(name=>modules[name]||primitives);}};
 ${fixtureClient}
 const components={};
-client.createTavernAssistantRendererFeatureModule().register({ctx:{effect:(fn,label)=>label==='dsh-tavern: game script owner'?()=>{}:fn()},slots:{inject:(_name,fn)=>fn(),register:(spec,component)=>{components[spec.key]=component;return ()=>{};}}});
+client.createTavernAssistantRendererFeatureModule().register({ctx:{inject:()=>{},effect:(fn,label)=>label==='dsh-tavern: game script owner'?()=>{}:fn()},slots:{inject:(_name,fn)=>fn(),register:(spec,component)=>{components[spec.key]=component;return ()=>{};}}});
 const dockSlots={};
 client.createPlayControlsFeatureModule().register({ctx:{get:()=>undefined,effect:fn=>fn(),betterSidebar:{registerTab:()=>()=>{}},sessions:{refresh:async()=>{},subagentAddress:()=>null},remote:{commands:{execute:async()=>({ok:true})}}},slots:{inject:(_name,fn)=>fn(),register:(spec,component)=>{dockSlots[spec.id]=component;return ()=>{};}}});
 const root=modules['react-dom/client'].createRoot(document.querySelector('#app'));

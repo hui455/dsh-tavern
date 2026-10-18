@@ -13050,6 +13050,7 @@ function bindTavernFontZoom(node, win) {
 				const [promptDraft, setPromptDraft] = React.useState(null);
 				const [referenceDraft, setReferenceDraft] = React.useState(null);
 				const [addDraft, setAddDraft] = React.useState(null);
+                const [addViewpoint, setAddViewpoint] = React.useState("auto");
 				const requestRef = React.useRef(null);
 				const addRequestRef = React.useRef(null);
 				const versions = state && state.versions || [];
@@ -13112,12 +13113,12 @@ function bindTavernFontZoom(node, win) {
 				async function addPicture() {
 					if (busy || !state || !state.enabled) return;
 					const text = (addDraft || "").trim();
-					const signature = state.key + ":" + text;
+					const signature = state.key + ":" + addViewpoint + ":" + text;
 					if (!addRequestRef.current || addRequestRef.current.signature !== signature) addRequestRef.current = { signature: signature, id: sceneImageRequestId() };
 					recordImageInteraction(props.sessionId, props.turn, addRequestRef.current.id, "click");
 					setBusy(true); setError("");
 					try {
-						await rpc("generateSceneImage", { turn: props.turn, key: state.key, kind: "add", instruction: text, requestId: addRequestRef.current.id }, props.sessionId);
+						await rpc("generateSceneImage", { turn: props.turn, key: state.key, kind: "add", instruction: text, viewpoint: addViewpoint, requestId: addRequestRef.current.id }, props.sessionId);
 						addRequestRef.current = null; setAddDraft(null);
 					} catch (e) { setError(String(e.message || e)); }
 					finally { setBusy(false); notify(); }
@@ -13162,7 +13163,7 @@ function bindTavernFontZoom(node, win) {
 						state.enabled ? React.createElement(React.Fragment, null,
 							React.createElement("button", { type: "button", className: "dsh-tavern-btn", disabled: locked, onClick: function () { setPromptDraft(null); setAddDraft(null); setAdjusting(true); } }, "重画"),
 							React.createElement("button", { type: "button", className: "dsh-tavern-btn", title: "自己写这张图的提示词再画，任意语言都可以，不经过文字模型", disabled: locked, onClick: function () { setAdjusting(false); setAddDraft(null); setPromptDraft(version.planPrompt || ""); } }, "改提示词"),
-							props.canAdd ? React.createElement("button", { type: "button", className: "dsh-tavern-btn", title: "为这一轮另选一个场景，再加一张插图", disabled: busy, onClick: function () { setAdjusting(false); setPromptDraft(null); setAddDraft(""); } }, "新增插图") : null
+							props.canAdd ? React.createElement("button", { type: "button", className: "dsh-tavern-btn", title: "为这一轮另选一个场景，再加一张插图", disabled: busy || state.sequenceRunning, onClick: function () { setAdjusting(false); setPromptDraft(null); setAddDraft(""); } }, "新增插图") : null
 						) : null
 					) : null,
 					!version && state.slot && state.status !== "running" && state.recovery !== "save" ? React.createElement("div", { className: "dsh-tavern-image-actions" },
@@ -13170,6 +13171,10 @@ function bindTavernFontZoom(node, win) {
 						React.createElement("button", { type: "button", className: "dsh-tavern-btn", disabled: busy, onClick: dismiss }, "移除")
 					) : null,
 					addDraft !== null && state.enabled ? React.createElement("div", { className: "dsh-tavern-image-adjust dsh-tavern-image-repaint", role: "region", "aria-label": "新增插图" },
+                        React.createElement("label", null, "插图视角", React.createElement("select", { "aria-label": "插图视角", value: addViewpoint, disabled: busy, onChange: function (event) { setAddViewpoint(event.target.value); } },
+                            React.createElement("option", { value: "auto" }, "自动判断（单角色默认第一人称）"),
+                            React.createElement("option", { value: "first-person" }, "用户第一人称"),
+                            React.createElement("option", { value: "omniscient" }, "上帝视角"))),
 						React.createElement("textarea", { value: addDraft, maxLength: 2000, rows: 2, autoFocus: true, "aria-label": "新插图想画什么（选填）", placeholder: "想画哪个场景？例如：她转身离开时的背影。留空由 AI 另选一个不同的场景", onChange: function (event) { setAddDraft(event.target.value); }, onKeyDown: function (event) {
 							if (event.key === "Escape" && !busy) setAddDraft(null);
 							else if (event.key === "Enter" && (event.metaKey || event.ctrlKey) && !busy) { event.preventDefault(); addPicture(); }
@@ -13180,7 +13185,9 @@ function bindTavernFontZoom(node, win) {
 					) : null,
 					canBindReference || referenceBindings.length ? React.createElement("button", { type: "button", className: "dsh-tavern-btn", disabled: locked, onClick: openReference }, referenceBindings.length ? "管理造型参考" : "用作造型参考") : null,
 					version && state.enabled && version.profile && version.profile !== state.profile ? React.createElement("span", { role: "status" }, "将按新渠道重新整理画面，可能产生文字模型费用。") : null,
-					state.referenceWarning || state.reference && state.reference.warning ? React.createElement("span", { role: "status" }, state.referenceWarning || state.reference.warning) : null,
+					state.sequenceError ? React.createElement("span", { role: "status" }, "后续插图已停止：" + state.sequenceError) : null,
+                    state.sequenceRunning ? React.createElement("span", { role: "status" }, "正在按场景需要生成本轮插图…") : null,
+                    state.referenceWarning || state.reference && state.reference.warning ? React.createElement("span", { role: "status" }, state.referenceWarning || state.reference.warning) : null,
 					showReference ? React.createElement("div", { className: "dsh-tavern-image-adjust dsh-tavern-image-reference", role: "region", "aria-label": "造型参考" },
 						canBindReference ? React.createElement(React.Fragment, null,
 							React.createElement("label", null, "参考人物", React.createElement("select", { value: referenceDraft.personId, disabled: locked, onChange: function (event) { setReferenceDraft(Object.assign({}, referenceDraft, { personId: event.target.value })); } },
@@ -15312,7 +15319,7 @@ function bindTavernFontZoom(node, win) {
                             missingRetries = 0;
                             // Added pictures run in their own slots while the first stays finished.
                             const record = result.illustration;
-                            if (record.status === "running" || (record.extras || []).some(function (extra) { return extra.status === "running"; })) timer = window.setTimeout(refresh, 1500);
+                            if (record.sequenceRunning || record.status === "running" || (record.extras || []).some(function (extra) { return extra.status === "running"; })) timer = window.setTimeout(refresh, 1500);
                             // 每轮自动生图 starts on the server once the round settles: watch a fresh round for a while.
                             else if (record.auto && record.status === "idle" && !(record.versions || []).length && !record.hasDeletedImages && autoWaits++ < 60) timer = window.setTimeout(refresh, 3000);
                         }
@@ -15477,7 +15484,7 @@ function bindTavernFontZoom(node, win) {
 					if (!patch && form.provider === "novelai") { input.endpoints = syncedEndpoints(form); input.artists = form.artists || []; }
 					let result = await rpc("saveSceneImageSettings", input); setForm(result.settings); setKey(""); setDirty(false);
 					window.dispatchEvent(new CustomEvent("dsh-tavern-image-settings-changed"));
-					setNotice(patch && Object.hasOwn(patch, "auto") ? (result.settings.auto ? "已开启每轮自动生图：每轮正文结算后自动生成一张插图，会持续产生费用。" : "已关闭每轮自动生图，之后只在点击图标时生图。") : patch && Object.hasOwn(patch, "enabled") ? (result.settings.enabled ? "已开启场景生图，点每轮正文下方的图片图标即可生图。" : "已关闭场景生图，已有插图保留。") : result.settings.enabled ? "已保存生图配置。" : "已保存生图配置；打开上方「开启场景生图」后，每轮正文下方会出现生图图标。");
+					setNotice(patch && Object.hasOwn(patch, "auto") ? (result.settings.auto ? "已开启每轮自动生图：每轮正文结算后按场景需要生成插图（最多 6 张），会持续产生费用。" : "已关闭每轮自动生图，之后只在点击图标时生图。") : patch && Object.hasOwn(patch, "enabled") ? (result.settings.enabled ? "已开启场景生图，点每轮正文下方的图片图标即可生图。" : "已关闭场景生图，已有插图保留。") : result.settings.enabled ? "已保存生图配置。" : "已保存生图配置；打开上方「开启场景生图」后，每轮正文下方会出现生图图标。");
 					window.dispatchEvent(new CustomEvent("dsh-tavern-image-settings-changed"));
 					return true;
 				}
@@ -15682,9 +15689,12 @@ function bindTavernFontZoom(node, win) {
 					h("span", null, "开启场景生图", h("span", { className: "dsh-tavern-settings-desc" }, form.enabled ? "所有游戏的每轮正文下方显示生图图标；关闭后隐藏，已有插图保留。" : form.ready && !dirty ? "开启后，所有游戏的每轮正文下方显示生图图标。" : "需先保存完整的生图配置（渠道、模型和 API Key）才能开启。")),
 					h("input", { type: "checkbox", role: "switch", "aria-label": "开启场景生图", checked: form.enabled === true, disabled: busy || !form.enabled && (dirty || !form.ready), onChange: function (e) { void save({ enabled: e.target.checked }); } })),
 				!form ? null : h("label", { className: "dsh-tavern-background-task" },
-					h("span", null, "每轮自动生图", h("span", { className: "dsh-tavern-settings-desc" }, !form.enabled ? "需先开启场景生图。" : form.auto ? "每轮正文结算完成后自动画一张插图；每张都会产生生图费用和少量文字模型费用。生成失败或删掉的插图不会自动重画。" : "默认关闭：只在点击图标时生图。打开后每轮自动画一张，会持续产生费用。")),
+					h("span", null, "每轮自动生图", h("span", { className: "dsh-tavern-settings-desc" }, !form.enabled ? "需先开启场景生图。" : form.auto ? "每轮正文结算后由 AI 判断场景，按需生成 1–6 张插图；每张都会产生生图费用和少量文字模型费用。生成失败或删掉的插图不会自动重画。" : "默认关闭：只在点击图标时生图。打开后每轮按场景需要生成 1–6 张，会持续产生费用。")),
 					h("input", { type: "checkbox", role: "switch", "aria-label": "每轮自动生图", checked: form.auto === true, disabled: busy || !form.enabled, onChange: function (e) { void save({ auto: e.target.checked }); } })),
-				h("h3", { className: "dsh-tavern-image-settings-title" }, "生图 API 配置（全局共用）"),
+				!form ? null : h("label", { className: "dsh-tavern-background-task" },
+                    h("span", null, "NSFW 内容", h("span", { className: "dsh-tavern-settings-desc" }, "开启后允许按剧情规划成人题材；不会自动添加成人内容，也不会将 NSFW 字样作为生图描述。")),
+                    h("input", { type: "checkbox", role: "switch", "aria-label": "NSFW 内容", checked: form.nsfw === true, disabled: busy, onChange: function (event) { void save({ nsfw: event.target.checked }); } })),
+                h("h3", { className: "dsh-tavern-image-settings-title" }, "生图 API 配置（全局共用）"),
 				h("p", { className: "dsh-tavern-image-hint" }, "自动复用已有参考图或外貌文字；没有参考资料时按人物卡和当前剧情生成，不暂停确认。"),
 				h("div", { className: "dsh-tavern-image-settings" },
 					h("p", { className: "dsh-tavern-settings-intro" }, "保存完整配置后，打开「开启场景生图」，每轮正文下方会出现生图图标。连接测试不生成图片；实际生图可能产生费用。"),

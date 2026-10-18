@@ -83,6 +83,10 @@ function downloadPublicImage(url, signal) {
 }
 
 export async function generateSceneImage(input, deps = {}) {
+  if (input.plan?.omitNsfwLabel) {
+    const clean = value => typeof value === 'string' ? value.replace(/\bnsfw\b/gi, '').replace(/,\s*,/g, ',').trim() : value
+    input = { ...input, prompt: clean(input.prompt), negativePrompt: clean(input.negativePrompt), plan: { ...input.plan, negative: clean(input.plan.negative) } }
+  }
   let outcome = 'not_requested'
   const request = deps.fetch || fetch
   let sequence = 0
