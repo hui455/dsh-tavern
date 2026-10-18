@@ -2,6 +2,8 @@
 
 ## Android 一键 APK（Android 11+ / ARM64）
 
+> 源码构建已改为完整包：内置酒馆及运行依赖，首次在本地初始化。下面的 v2.1 发布链接仍是原在线安装包；新版完整 APK 的构建说明见 [android/apk/README.md](../android/apk/README.md)。
+
 [下载 DSH Tavern Android APK](https://github.com/flizzywine/dsh-tavern/releases/download/v2.1/dsh-tavern-android-release.apk) · [下载 SHA-256 校验文件](https://github.com/flizzywine/dsh-tavern/releases/download/v2.1/dsh-tavern-android-release.apk.sha256)
 
 1. 下载 APK，按 Android 提示允许当前浏览器或文件管理器安装应用，然后安装。

@@ -51,10 +51,8 @@ def prepare(source, apk, destination):
             target = assets / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(archive.read(name))
-    setup = (HERE.parent / 'setup.sh').read_text()
-    setup += '\n# 独立 APK 由原生生命周期持有 tavern 主进程，结束安装器的临时服务。\n'
-    setup += 'DSH_TAVERN_PORT=3088 DSH_TAVERN_RUNTIME_HOST=android node /root/.dsh/apps/dsh-tavern/bin/dsh-tavern.mjs stop\n'
-    (assets / 'tavern-apk-setup.sh').write_text(setup)
+    setup = (HERE / 'offline-setup.sh').read_bytes().replace(b'\r\n', b'\n')
+    (assets / 'tavern-apk-setup.sh').write_bytes(setup)
     java = app / 'src/main/java/com/deepseekharness/app'
     shutil.copyfile(HERE / 'TavernBootstrap.java', java / 'core/TavernBootstrap.java')
     tests = app / 'src/test/java/com/deepseekharness/app/util'
@@ -72,8 +70,8 @@ def prepare(source, apk, destination):
     welcome = app / 'src/main/res/layout/welcome_page1.xml'
     replace(welcome, 'android:text="@string/ui_m0035"', 'android:text="@string/tavern_first_install"')
     for language, message in {
-        'values': '内置 DSHA 运行环境。首次打开将联网下载最新版酒馆并安装依赖，请保持网络连接。无需输入安装命令。',
-        'values-en': 'Includes the DSHA runtime. First launch downloads the latest Tavern and installs its dependencies. Keep your internet connection active. No installation commands required.',
+        'values': '内置运行环境、酒馆和全部运行依赖。首次打开在本地解压初始化，无需联网下载。使用在线模型时需要联网。',
+        'values-en': 'Includes the runtime, Tavern and its dependencies. First launch initializes locally without downloading. Online models require an internet connection.',
     }.items():
         (app / f'src/main/res/{language}/tavern_strings.xml').write_text(
             '<?xml version="1.0" encoding="utf-8"?><resources><string name="tavern_first_install">'
@@ -81,7 +79,7 @@ def prepare(source, apk, destination):
     controller = java / 'core/HarnessController.java'
     replace(controller, '            String startupProfile = "web";', '''            if (!safeMode) {
                 TavernBootstrap.ensure(ctx, boot, () -> !lifecycle.isCurrent(generation), message -> {
-                    if (message.startsWith("首次安装：")) setWebStage(generation, "下载并安装最新版酒馆");
+                    if (message.startsWith("首次安装：")) setWebStage(generation, "解压并初始化内置酒馆");
                     reportStatus(generation, onStatus, message);
                 });
             }

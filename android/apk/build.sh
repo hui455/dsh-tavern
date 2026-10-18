@@ -20,6 +20,7 @@ BUILD="$(mktemp -d "${WORK}/build.XXXXXX")"
 rmdir "$BUILD"
 npm ci --prefix "$WORK/dsha/tools/web-compat" --ignore-scripts --no-audit --no-fund
 python3 "$ROOT/android/apk/prepare.py" --source "$WORK/dsha" --apk "$APK" --output "$BUILD"
+python3 "$ROOT/android/apk/build-payload.py" "$BUILD/app/src/tavern/assets"
 node "$ROOT/android/apk/build-web-compat.mjs" "$WORK/dsha" "$BUILD/app/src/tavern/assets"
 cd "$BUILD"
 MODE="${TAVERN_APK_MODE:-Debug}"
