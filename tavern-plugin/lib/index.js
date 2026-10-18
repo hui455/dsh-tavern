@@ -22,6 +22,8 @@ import { registerWorldbookTools } from './tools/worldbook.js'
 import { registerPresetTools } from './tools/preset.js'
 import { registerRegexLibraryTools } from './tools/regex-library.js'
 import { registerCardEditingTools } from './tools/card-editing.js'
+import { registerCardVisualReferenceTool } from './tools/card-visual-references.js'
+import { visualReferenceDocument } from './domain/card-visual-references.js'
 import { createConversationGuides } from './domain/conversation-guides.js'
 import { createGuideLibrary } from './domain/guide-library.js'
 import { createRegexLibrary } from './domain/regex-library.js'
@@ -2658,6 +2660,7 @@ export async function apply(ctx) {
   })
   ctx.effect(() => () => backgroundAgentRunner.dispose(), 'dsh-tavern: dispose resident background agents')
   const sceneIllustrations = TAVERN_RELEASE_CAPABILITIES.sceneImages ? createSceneIllustrations({
+    cardReferencesForChat: async chat => chat.cardPath ? visualReferenceDocument(await readCardWorkspace(chat.cardPath)) : { version: 1, revision: 0, characters: [] },
     prompt: runtimePrompt,
     onDiagnostic: imageHostDiagnostic,
     readLegacyConfiguration: legacyImageConfigurationReader(ctx.get('settings')?.documentPath),
@@ -5351,6 +5354,7 @@ export async function apply(ctx) {
       turnOrchestrator,
       worldBooks,
     })
+    registerCardVisualReferenceTool({ tools, chatForSession, readCardWorkspace, turnOrchestrator, activeTurnOf, attachments: () => ctx.get('attachments') })
   }
 
   try {

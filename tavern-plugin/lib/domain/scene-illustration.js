@@ -11,6 +11,7 @@ import { readScenePlanInstruction, readSceneAdjustmentInstruction } from '../sce
 import { imageAdjustmentInput, applyImageAdjustment, legacyImagePlan, SCENE_ADJUSTMENT_TOOL } from './scene-image-adjustment.js'
 import { createSceneImageStyles, applyImageStyle, composeSceneImagePrompt, styleWrittenByAgent, legacyStyleLabel } from './scene-image-style.js'
 import { createSceneCharacterLooks } from './scene-character-looks.js'
+import { applyCardVisualReferences } from './card-visual-references.js'
 import { createPendingSceneImages } from './scene-image-pending.js'
 import { createSceneImageQueue } from './scene-image-queue.js'
 import { createSceneReferences } from './scene-references.js'
@@ -388,6 +389,7 @@ export function createSceneIllustrations(deps) {
       // Retrying an added picture keeps the user's wish for that scene.
       const sceneRequest = target.slot ? (adding ? addRequest : String(existing?.addRequest || '')) : ''
       const { active, apiKey } = await capture()
+      const cardReferences = await deps.cardReferencesForChat?.(chat) || { version: 1, revision: 0, characters: [] }
       if (active.enabled !== true) throw new Error('场景生图未开启：请到 设置 → 场景生图 打开「开启场景生图」')
       if (await deps.isRunning?.(sessionId)) throw new Error('请等待当前正文生成完成后再生图')
       if (Object.hasOwn(existing?.requests || {}, requestId) || (kind === 'generate' && existing?.status === 'succeeded') || existing?.status === 'running' && (jobs.has(path) || ownerIsLive(existing, path))) return present(target, existing)
@@ -424,6 +426,8 @@ export function createSceneIllustrations(deps) {
         const snapshot = sceneInput(chat, target, historical)
         const basic = sceneSources(chat, target, snapshot)
         prepared = await plans.prepare({ chatId: chat.id, target, ...basic, profile, autoStyle: styleWrittenByAgent(active.style), stylePreference: active.style?.custom?.trim() || '', replan: kind === 'replan' })
+        prepared.input.cardVisualReferences = cardReferences.characters.filter(person => basic.sources.some(source => source.text.includes(person.name)) || prepared.input.characters.some(known => known.name === person.name)).slice(0, 8)
+          .map(person => ({ name: person.name, text: (person.text || '').slice(0, 1000), hasImage: Boolean(person.image) }))
         {
           const knownLooks = await characterLooks.list(chat.id, Object.keys(prepared.people || {}), active)
           prepared.input.confirmedLooks = knownLooks.people.filter(person => person.approved).map(person => ({ id: person.id, name: person.name, appearance: person.confirmed.appearance, tags: person.confirmed.tags }))
@@ -480,7 +484,7 @@ export function createSceneIllustrations(deps) {
       diagnosticSecrets.set(record.requestId, [apiKey])
       const job = { controller, requestId: record.requestId, promise: null }
       jobs.set(path, job)
-      job.promise = execute({ sessionId, chatId: chat.id, target, path, record, prepared, material, references, characterDesigns, selectedImageReferences, adjustment, basePlan, profile, styleOf, active, apiKey, selection, controller })
+      job.promise = execute({ sessionId, chatId: chat.id, target, path, record, prepared, material, references, characterDesigns, selectedImageReferences, cardReferences, adjustment, basePlan, profile, styleOf, active, apiKey, selection, controller })
         .finally(() => { jobs.delete(path); diagnosticSecrets.delete(record.requestId) })
       // Failure to persist a failure is reported locally, never as an unhandled rejection.
       job.promise.catch(() => deps.onStorageError?.())
@@ -508,7 +512,8 @@ export function createSceneIllustrations(deps) {
     async function deliverImage() {
       controller.signal.throwIfAborted()
       const lookReferences = await characterLooks.apply(input.chatId, plan, active)
-      plan = lookReferences.plan
+      const cardReference = applyCardVisualReferences(lookReferences.plan, input.cardReferences, active)
+      plan = cardReference.plan
       delete record.pendingCharacters
       plan = applyImageStyle(plan, await input.styleOf(plan))
       const prompt = composeSceneImagePrompt(plan)
@@ -534,9 +539,11 @@ export function createSceneIllustrations(deps) {
         if (lookReferences) {
           // Prefer explicit portraits, retaining ordinary manually-bound references
           // for other subjects. Missing portraits must not erase existing images.
-          const lookIds = new Set(lookReferences.images.map(image => image.personId))
-          reference.images = [...lookReferences.images, ...reference.images.filter(image => !lookIds.has(image.personId))].slice(0, input.selectedImageReferences.capability.maxImages)
-          reference.warnings = [...new Set([...reference.warnings, ...lookReferences.warnings])]
+          const explicitIds = new Set(cardReference.matchedIds)
+          const explicit = [...cardReference.images, ...lookReferences.images.filter(image => !explicitIds.has(image.personId))]
+          const lookIds = new Set([...explicitIds, ...explicit.map(image => image.personId)])
+          reference.images = [...explicit, ...reference.images.filter(image => !lookIds.has(image.personId))].slice(0, input.selectedImageReferences.capability.maxImages)
+          reference.warnings = [...new Set([...reference.warnings, ...lookReferences.warnings, ...cardReference.warnings])]
         }
         record.referenceImages = reference.images.map(image => image.reference)
         record.referenceWarning = reference.warnings.join(' ')

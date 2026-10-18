@@ -16,6 +16,31 @@ const imagePath = 'scene-images/' + createHash('sha256').update('test-chat').dig
 const chatFixture = () => ({ id: 'test-chat', mode: 'story', sessionId: 'parent', settleStatus: 'done', posture: '站在窗边，左手扶窗', messages: [{ role: 'user', text: '走到窗边' }, { role: 'assistant', turn: 2, sourceText: '她站在窗边看雨。', swipes: ['她站在窗边看雨。', '她坐在椅子上。'], swipeId: 0 }] })
 const planFixture = (tags = 'A woman standing at a rainy window') => ({ description: '窗边一景', subjects: [], characters: [], continuity: 'uncertain', scene: { composition: { text: '窗边一景', tags } } })
 
+test('card-workbench references reach scene generation; missing references and legacy waiting jobs do not block', async t => {
+  const requests = []
+  const fx = await fixture(t, {
+    cardReferencesForChat: async () => ({ version: 1, revision: 1, characters: [{ name: '林岚', text: '成年女性，银发', tags: 'adult woman, silver hair' }] }),
+    runAgent: async input => { await submitPlanCall(input, { arguments: { plan: { ...planFixture(), subjects: ['p', 'q'], characters: [
+      { id: 'p', name: '林岚', fields: { appearance: { text: '黑发', tags: 'black hair' } } },
+      { id: 'q', name: '新人物', fields: { appearance: { text: '成年男性，棕发', tags: 'adult man, brown hair' } } }
+    ] } } }) },
+    generate: async input => { requests.push(input); return { data: png, mediaType: 'image/png' } }
+  })
+  await fx.service.configure({ confirmCharacters: true }) // Legacy flag must not restore gating.
+  const key = sceneTarget(fx.chat(), 2).key
+  await fx.service.start('parent', 2, key)
+  await until(async () => (await fx.service.status('parent', 2)).status === 'succeeded')
+  assert.equal(requests.length, 1)
+  assert.match(requests[0].prompt, /silver hair/)
+  assert.doesNotMatch(requests[0].prompt, /black hair/)
+  assert.match(requests[0].prompt, /brown hair/)
+  const record = await fx.store.readJson(imagePath + key + '.json')
+  await fx.store.writeJson(imagePath + key + '.json', { ...record, status: 'awaiting-characters', stage: 'awaiting-characters', versions: [], outcome: 'not_requested' })
+  await fx.service.start('parent', 2, key, { requestId: 'resume-legacy-waiting' })
+  await until(async () => (await fx.service.status('parent', 2)).status === 'succeeded')
+  assert.equal(requests.length, 2)
+})
+
 for (const referenceCapable of [false, true]) test('optional character references never gate default generation and later use ' + (referenceCapable ? 'authorized portrait' : 'confirmed text'), async t => {
   const requests = [], reviewSessions = []
   const fx = await fixture(t, {
