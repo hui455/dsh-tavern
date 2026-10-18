@@ -43,7 +43,7 @@ function trackTavernPopover(popup, anchor, align = 'start', limit = Infinity) {
 
 function filterOrganizedCards(cards, filter, query) {
   const needle = query.trim().toLocaleLowerCase();
-  return cards.filter(card => (!needle || (card.name + ' ' + card.path).toLocaleLowerCase().includes(needle))
+  return cards.filter(card => (!needle || (card.name + ' ' + card.path + ' ' + (card.summary || '') + ' ' + (card.labels || []).join(' ')).toLocaleLowerCase().includes(needle))
     && (filter === '*' || (filter === 'favorites' ? card.starred : (card.group || '') === filter.slice(6))));
 }
 
@@ -189,6 +189,21 @@ function useCardOrganization(cards, busy, refresh, onError, batch) {
           } }, saving ? '添加中…' : '添加' + (addPaths.length ? '（' + addPaths.length + '）' : '')))
       )) : null);
   }
+  async function editLibraryInfo(card, field) {
+    try {
+      const current = await rpc('getCardLibraryInfo', { path: card.path });
+      await askTavernText({ title: field === 'summary' ? '人物卡简介' : '人物卡标签',
+        description: field === 'summary' ? '用于选卡时快速了解，默认留空。' : '用逗号或换行分隔，最多 20 个标签，每个最多 40 字。',
+        initialValue: field === 'summary' ? current.summary : (current.labels || []).join('，'),
+        multiline: true, allowEmpty: true, maxLength: field === 'summary' ? 4000 : 1000, confirmLabel: '保存',
+        onSubmit: async value => {
+          await rpc('setCardLibraryInfo', { path: card.path, [field]: field === 'summary' ? value : value.split(/[,，\n]/).map(label => label.trim()).filter(Boolean) });
+          await refresh();
+          notifyTavernDataChanged(['cards'], 'card-library-info');
+        }
+      });
+    } catch (error) { onError(String(error.message || error)); }
+  }
   function rowMenu(card) {
     return h('details', { className: 'dsh-tavern-card-row-menu',
       onBlur: event => { if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.open = false; },
@@ -202,11 +217,13 @@ function useCardOrganization(cards, busy, refresh, onError, batch) {
         document.querySelectorAll('.dsh-tavern-card-row-menu[open]').forEach(other => { if (other !== root) other.open = false; });
         positionMenu(popup, root.querySelector('summary'), 'end', 300);
       }
-    }, h('summary', { 'aria-label': '选择分组：' + card.name, title: '选择分组' }, '⋯'),
+    }, h('summary', { 'aria-label': '更多：' + card.name, title: '更多' }, '⋯'),
       h('div', { className: 'dsh-tavern-card-row-popup',
         ...(typeof HTMLElement !== 'undefined' && 'showPopover' in HTMLElement.prototype ? { popover: 'auto' } : {}),
         onToggle: event => { if (event.newState === 'closed' || event.nativeEvent?.newState === 'closed') event.currentTarget.closest('details').open = false; }
       },
+        h('button', { type: 'button', disabled, onClick: event => { event.currentTarget.closest('details').open = false; void editLibraryInfo(card, 'summary'); } }, '编辑简介'),
+        h('button', { type: 'button', disabled, onClick: event => { event.currentTarget.closest('details').open = false; void editLibraryInfo(card, 'labels'); } }, '编辑标签'),
         pins.button(card.path, disabled),
         h('div', { className: 'dsh-tavern-card-row-menu-title' }, '移到分组'),
         ['', ...groups].map(group => h('button', { key: group, type: 'button', disabled,

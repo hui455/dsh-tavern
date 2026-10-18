@@ -4,6 +4,8 @@ function normalize(value) {
   const groups = [...new Set((Array.isArray(value?.groups) ? value.groups : []).filter(name => typeof name === 'string' && name.trim()))]
   const cards = Object.fromEntries(Object.entries(value?.cards || {}).map(([path, item]) => [path, {
     starred: item?.starred === true,
+    summary: typeof item?.summary === 'string' ? item.summary : '',
+    labels: Array.isArray(item?.labels) ? item.labels.filter(label => typeof label === 'string') : [],
     group: groups.includes(item?.group) ? item.group : ''
   }]))
   return { version: 1, groups, cards }
@@ -34,10 +36,14 @@ export function createCardOrganization(store) {
         if (!Array.isArray(input.paths) || !input.paths.length || input.paths.some(path => !availablePaths.includes(path))) throw new Error('请选择有效的人物卡')
         if (input.group !== undefined && input.group !== '' && !state.groups.includes(input.group)) throw new Error('分组不存在，请刷新列表')
         if (input.starred !== undefined && typeof input.starred !== 'boolean') throw new Error('星标状态无效')
+        if (input.summary !== undefined && (typeof input.summary !== 'string' || input.summary.length > 4000)) throw new Error('简介最多 4000 字')
+        if (input.labels !== undefined && (!Array.isArray(input.labels) || input.labels.length > 20 || input.labels.some(label => typeof label !== 'string' || !label.trim() || label.trim().length > 40))) throw new Error('标签最多 20 个，每个填写 1–40 字')
         for (const path of input.paths) state.cards[path] = {
           ...(state.cards[path] || { starred: false, group: '' }),
           ...(input.group !== undefined ? { group: input.group } : {}),
-          ...(input.starred !== undefined ? { starred: input.starred } : {})
+          ...(input.starred !== undefined ? { starred: input.starred } : {}),
+          ...(input.summary !== undefined ? { summary: input.summary.trim() } : {}),
+          ...(input.labels !== undefined ? { labels: [...new Set(input.labels.map(label => label.trim()))] } : {})
         }
       } else throw new Error('未知的人物卡整理操作')
       return state
@@ -55,7 +61,7 @@ export function createCardOrganization(store) {
   }
   async function project(cards) {
     const state = await read()
-    return cards.map(card => ({ ...card, ...(state.cards[card.path] || { starred: false, group: '' }) }))
+    return cards.map(card => ({ ...card, ...(state.cards[card.path] || { starred: false, group: '', summary: '', labels: [] }) }))
       .sort((a, b) => Number(b.starred) - Number(a.starred))
   }
   return { read, update, movePath, project }

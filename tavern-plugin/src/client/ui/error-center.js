@@ -120,8 +120,9 @@
 					panel.append(description);
 				}
 
-				const input = document.createElement("input");
-				input.type = "text";
+				const input = document.createElement(opts.multiline ? "textarea" : "input");
+                if (opts.multiline) input.rows = 6; else input.type = "text";
+                input.setAttribute("aria-label", String(opts.title || "输入"));
 				input.className = "dsh-tavern-prompt-input";
 				input.autocomplete = "off";
 				input.spellcheck = false;
@@ -188,7 +189,7 @@
 				input.addEventListener("input", function () { if (!busy) confirmButton.disabled = !opts.allowEmpty && input.value.trim() === ""; });
 				input.addEventListener("keydown", function (event) {
 					// 部分 WebKit 在确认选字时先结束 composition；229 仍表示本次按键属于输入法。
-					if (event.key !== "Enter" || event.isComposing || event.keyCode === 229) return;
+					if (event.key !== "Enter" || event.isComposing || event.keyCode === 229 || (opts.multiline && !event.ctrlKey && !event.metaKey)) return;
 					event.preventDefault();
 					void submit();
 				});

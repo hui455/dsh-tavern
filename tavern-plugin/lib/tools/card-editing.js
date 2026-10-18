@@ -6,6 +6,7 @@ import { searchCardRaw } from '../domain/card-reading.js'
 import { normalizeResourcePath } from '../domain/file-resources.js'
 
 export function registerCardEditingTools({
+  cardLibraryInfo,
   activeTurnOf,
   cardPreparation,
   chatForSession,
@@ -17,6 +18,28 @@ export function registerCardEditingTools({
   turnOrchestrator,
   worldBooks,
 }) {
+  tools.register(defineTool({
+    name: 'tavern_card_library_info',
+    description: '读取或按用户要求填写人物卡库的简介和标签。默认均为空，独立于人物卡设定和原始 tags，不注入游玩提示词。省略 summary 和 labels 时只读取；空字符串清空简介，空数组清空标签；未提供的字段保留。',
+    parameters: {
+      path: { type: 'string', description: 'cards/... 路径，省略时使用当前人物卡' },
+      summary: { type: 'string', description: '库内简介，最多 4000 字' },
+      labels: { type: 'array', items: { type: 'string' }, description: '库内标签，最多 20 个，每个 1–40 字' }
+    },
+    output: {
+      schema: { type: 'object', additionalProperties: false, properties: {
+        path: { type: 'string', required: true }, summary: { type: 'string', required: true },
+        labels: { type: 'array', required: true, items: { type: 'string' } }
+      } },
+      render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }]
+    },
+    async execute(args, exec) {
+      const chat = await chatForSession(exec?.agent?.session?.id || '')
+      if (!chat || (chat.mode || 'story') !== 'card') throw new Error('简介和标签只能在卡片工作台中编辑')
+      const path = normalizeResourcePath(args.path || chat.cardPath, 'card')
+      return await cardLibraryInfo(path, { summary: args.summary, labels: args.labels })
+    }
+  }))
   tools.register(defineTool({
     name: 'tavern_update_card',
     description: '仅当用户明确要求或确认修改时，立即保存最小的人物卡变更；保存后自动校验磁盘文件并在结果中返回，无需再调用 tavern_validate_card；有错误时修正后再保存。path 可指定任意人物卡，省略时改当前打开的卡；无需事先挂载或引用。空白工作台会直接创建并绑定正式人物卡文件，必须同时具备角色名和玩家身份。另存为副本时先调用 tavern_copy_card，由工具保留源卡 PNG。只讨论时不要调用。',

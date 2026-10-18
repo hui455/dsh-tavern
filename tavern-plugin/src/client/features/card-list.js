@@ -12,7 +12,9 @@
 				React.createElement("b", { title: card.name }, card.name),
 				props.showPath && card.path ? React.createElement("span", { title: card.path, style: { overflowWrap: "anywhere" } }, "文件：" + String(card.path).replace(/\\/g, "/").split("/").pop()) : null,
 				card.readError || props.detail ? React.createElement("span", { className: card.readError ? "dsh-tavern-dock-error" : undefined }, card.readError || props.detail) : null,
-				props.extra ? React.createElement("span", null, props.extra) : null
+				props.extra ? React.createElement("span", null, props.extra) : null,
+                card.summary ? React.createElement("span", { className: "dsh-tavern-card-summary", title: card.summary }, card.summary) : null,
+                card.labels && card.labels.length ? React.createElement("span", { className: "dsh-tavern-card-labels" }, card.labels.map(label => React.createElement("span", { key: label }, label))) : null
 			));
 		}
 

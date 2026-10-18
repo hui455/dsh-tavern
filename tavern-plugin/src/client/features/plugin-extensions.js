@@ -490,7 +490,8 @@
 				path: card.path, name: card.name, fileName: String(card.path).replace(/\\/g, "/").split("/").pop(),
 				imageUrl: card.hasImage ? "/api/dsh-tavern/card-image?path=" + encodeURIComponent(card.path) : "",
 				script: card.script ? { title: card.script.title } : null,
-				group: card.group || "", starred: Boolean(card.starred), error: card.readError || ""
+				summary: card.summary || "", labels: card.labels || [],
+                group: card.group || "", starred: Boolean(card.starred), error: card.readError || ""
 			};
 		}
 
@@ -507,6 +508,8 @@
 						card.imageUrl ? h("img", { className: "dsh-tavern-card-grid-cover", src: card.imageUrl, alt: "", loading: "lazy" })
 							: h("span", { className: "dsh-tavern-card-grid-cover placeholder", "aria-hidden": "true" }, Array.from(String(card.name || "").replace(/^[^\p{L}\p{N}]+/u, ""))[0] || "?"),
 						h("span", { className: "dsh-tavern-card-grid-name" }, card.name)),
+                    card.summary ? h("div", { className: "dsh-tavern-card-summary", title: card.summary }, card.summary) : null,
+                    card.labels && card.labels.length ? h("div", { className: "dsh-tavern-card-labels" }, card.labels.map(label => h("span", { key: label }, label))) : null,
 					input.selecting ? h("input", { type: "checkbox", className: "dsh-tavern-card-batch-checkbox dsh-tavern-card-grid-check", checked: selected, disabled: input.busy,
 						"aria-label": "选择人物卡：" + card.name, onChange: function () { input.toggle(card.path); } }) : null,
 					corner.length ? h("span", { className: "dsh-tavern-card-grid-corner" }, corner) : null);

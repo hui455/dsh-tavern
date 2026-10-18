@@ -2873,3 +2873,9 @@ details.dsh-tavern-recall-guide > summary .dsh-tavern-recall-guide-heading > spa
 .dsh-tavern-look-description, .dsh-tavern-look-message { white-space: pre-wrap; overflow-wrap: anywhere; }
 .dsh-tavern-look-person textarea { width: 100%; box-sizing: border-box; margin: 12px 0; }
 .dsh-tavern-look-portrait { display: block; width: auto; max-width: 100%; max-height: 400px; margin: 12px auto; border-radius: 8px; }
+
+.dsh-tavern-card-summary { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; white-space: pre-wrap; font-size: 12px; line-height: 1.5; margin-top: 4px; }
+.dsh-tavern-card-labels { display: flex !important; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.dsh-tavern-card-labels > span { border-radius: 4px; padding: 1px 5px; background: color-mix(in srgb, currentColor 8%, transparent); font-size: 11px; overflow-wrap: anywhere; }
+.dsh-tavern-card-grid-item > .dsh-tavern-card-summary,.dsh-tavern-card-grid-item > .dsh-tavern-card-labels { padding-inline: 4px; }
+textarea.dsh-tavern-prompt-input { resize: vertical; min-height: 120px; }

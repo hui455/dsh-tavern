@@ -1117,6 +1117,16 @@ export async function apply(ctx) {
       return projectCardSummary(workspace)
     }
   })
+  async function cardLibraryInfo(cardPath, patch = {}) {
+    const path = normalizeResourcePath(cardPath, 'card')
+    const available = await fileResources.list('card')
+    if (!available.includes(path)) throw new Error('人物卡不存在')
+    if (patch.summary !== undefined || patch.labels !== undefined) {
+      await cardOrganization.update({ action: 'cards', paths: [path], summary: patch.summary, labels: patch.labels }, available)
+    }
+    const info = (await cardOrganization.read()).cards[path]
+    return { path, summary: info?.summary || '', labels: info?.labels || [] }
+  }
   async function listCards() {
     const cardPaths = await fileResources.list('card')
     const scriptBindings = await fileResources.scriptBindingsForCards(cardPaths)
@@ -4149,6 +4159,8 @@ export async function apply(ctx) {
         if (await fileResources.readText(args?.path) === undefined) throw new Error('资源不存在')
         return await libraryPins.set(args?.kind, args?.path, args?.pinned)
       }
+      case 'getCardLibraryInfo': return await cardLibraryInfo(args?.path)
+      case 'setCardLibraryInfo': return await cardLibraryInfo(args?.path, args || {})
       case 'getCardOrganization': return { groups: (await cardOrganization.read()).groups }
       case 'organizeCards': return { groups: (await cardOrganization.update(args || {}, await fileResources.list('card'))).groups }
       case 'listCards': return { cards: await listCards() }
@@ -5146,7 +5158,7 @@ export async function apply(ctx) {
   }
 
   const skillGatedTools = createSkillGatedTools()
-  const controlledToolNames = new Set([STORY_SUBMIT_TOOL_NAME, 'tavern_read_variables', ...CARD_MEMORY_TOOLS, 'bash', 'pwsh', ...dshFileToolNames, 'skill', 'tavern_read_skill_reference', 'web_search', 'tavern_save_skill', ...cordisToolNames, 'tavern_user_profile_read', 'tavern_user_profile_save', 'tavern_user_profile_confirm', 'tavern_read_card', 'tavern_read_card_raw', 'tavern_search_card', 'tavern_replace_card_text', 'tavern_mvu_overview', 'tavern_apply_mvu', 'tavern_read_play_chat', 'tavern_read_script', 'tavern_recall_history', 'worldbook_search', 'tavern_read_worldbook', 'tavern_update_worldbook', 'tavern_read_preset', 'tavern_update_preset', 'tavern_read_regex_library', 'tavern_copy_card', 'tavern_update_card', 'tavern_restore_card', 'tavern_validate_card', 'tavern_test_response'])
+  const controlledToolNames = new Set([STORY_SUBMIT_TOOL_NAME, 'tavern_read_variables', ...CARD_MEMORY_TOOLS, 'bash', 'pwsh', ...dshFileToolNames, 'skill', 'tavern_read_skill_reference', 'web_search', 'tavern_save_skill', ...cordisToolNames, 'tavern_user_profile_read', 'tavern_user_profile_save', 'tavern_user_profile_confirm', 'tavern_read_card', 'tavern_read_card_raw', 'tavern_search_card', 'tavern_replace_card_text', 'tavern_mvu_overview', 'tavern_apply_mvu', 'tavern_read_play_chat', 'tavern_read_script', 'tavern_recall_history', 'worldbook_search', 'tavern_read_worldbook', 'tavern_update_worldbook', 'tavern_read_preset', 'tavern_update_preset', 'tavern_read_regex_library', 'tavern_copy_card', 'tavern_card_library_info', 'tavern_update_card', 'tavern_restore_card', 'tavern_validate_card', 'tavern_test_response'])
   const foregroundStrategies = createForegroundOrchestrationStrategies({
     compatibility: {
       beforeTurn: async function (input) {
@@ -5360,6 +5372,7 @@ export async function apply(ctx) {
     registerRegexLibraryTools({ chatForSession, regexLibrary, tools })
 
     registerCardEditingTools({
+      cardLibraryInfo,
       activeTurnOf,
       cardPreparation,
       chatForSession,
