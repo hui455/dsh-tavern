@@ -58,13 +58,14 @@ test('内置 Agent 工具读写真实磁盘，限制卡片模式，省略字段�
   mode = 'story'
   await assert.rejects(tool.execute({ labels: [] }, exec), /卡片工作台/)
 })
-test('更多菜单能编辑简介和标签，保存到磁盘并用于搜索', async t => {
+test('更多进入详情，编辑和保存位于详情正文，支持取消', async t => {
   const { library } = await fixture(t)
   const dom = new JSDOM('<div id="root"></div>', { url: 'http://localhost' })
   const previous = { window: globalThis.window, document: globalThis.document }
   globalThis.window = dom.window; globalThis.document = dom.window.document; globalThis.IS_REACT_ACT_ENVIRONMENT = true
   t.after(() => { Object.assign(globalThis, previous); delete globalThis.IS_REACT_ACT_ENVIRONMENT; dom.window.close() })
-  let prompt, refreshes = 0
+  let refreshes = 0
+  dom.window.HTMLDialogElement.prototype.showModal = function () { this.open = true }
   const cards = [{ path: 'cards/a.json', name: '测试卡' }]
   const source = await readFile(new URL('../tavern-plugin/src/client/card-organization.js', import.meta.url), 'utf8')
   const context = vm.createContext({ React, document: dom.window.document, useTavernConfirm: () => () => false,
@@ -77,22 +78,24 @@ test('更多菜单能编辑简介和标签，保存到磁盘并用于搜索', as
     }
   })
   vm.runInContext(source, context)
-  function Panel() { return context.useCardOrganization(cards, false, () => { refreshes++ }, message => { throw Error(message) }, { managing: false }).rowMenu(cards[0]) }
+  function Panel() { const model = context.useCardOrganization(cards, false, () => { refreshes++ }, message => { throw Error(message) }, { managing: false }); return React.createElement(React.Fragment, null, model.toolbar(), model.rowMenu(cards[0])); }
   const root = createRoot(dom.window.document.getElementById('root'))
   await act(async () => root.render(React.createElement(Panel)))
-  assert.equal(dom.window.document.querySelector('summary').title, '更多')
-  for (const [label, value] of [['编辑简介', '神秘的城镇'], ['编辑标签', '悬疑，探索\n悬疑']]) {
-    const button = [...dom.window.document.querySelectorAll('button')].find(button => button.textContent === label)
-    await act(async () => { button.click(); await new Promise(resolve => setTimeout(resolve, 30)) })
-    assert.equal(prompt.allowEmpty, true)
-    assert.equal(prompt.multiline, true)
-    await act(async () => prompt.onSubmit(value))
-  }
-  const projected = await library.project(cards)
-  assert.equal(projected[0].summary, '神秘的城镇')
-  assert.deepEqual(projected[0].labels, ['悬疑', '探索'])
-  assert.equal(context.filterOrganizedCards(projected, '*', '城镇').length, 1)
-  assert.equal(context.filterOrganizedCards(projected, '*', '探索').length, 1)
-  assert.equal(refreshes, 2)
+  assert.equal(dom.window.document.querySelector('.dsh-tavern-card-row-menu summary').title, '更多')
+  function button(label) { return [...dom.window.document.querySelectorAll('button')].find(button => button.textContent === label) }
+  assert.equal(button('编辑简介'), undefined)
+  await act(async () => button('详情').click())
+  await act(async () => new Promise(resolve => setTimeout(resolve, 30)))
+  const section = dom.window.document.querySelector('dialog section')
+  assert.ok(section.textContent.includes('暂无简介'))
+  assert.ok(section.textContent.includes('暂无标签'))
+  await act(async () => button('编辑简介和标签').click())
+  assert.equal(section.querySelectorAll('textarea').length, 2)
+  assert.ok(section.contains(button('保存简介和标签')))
+  await act(async () => button('取消').click())
+  assert.equal(section.querySelectorAll('textarea').length, 0)
+  await act(async () => button('编辑简介和标签').click())
+  await act(async () => { button('保存简介和标签').click(); await new Promise(resolve => setTimeout(resolve, 30)) })
+  assert.equal(refreshes, 1)
   await act(async () => root.unmount())
 })

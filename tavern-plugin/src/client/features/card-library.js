@@ -8,7 +8,7 @@
 			const [loading, setLoading] = React.useState(false);
 						const [busy, setBusy] = React.useState(false);
 			const cardBatch = useCardBatchDeletion(cards, busy, setBusy, refreshCards, props.archiveSession);
-			const organization = useCardOrganization(cards, busy, refreshCards, error => setError(error), cardBatch);
+			const organization = useCardOrganization(cards, busy, refreshCards, error => setError(error), cardBatch, item => loadCard(item.path));
 			const [error, setError] = usePersistentError("人物卡库");
 			const importInput = React.useRef(null);
 			const [importStatus, setImportStatus] = React.useState("");
@@ -498,6 +498,7 @@
 					props.library ? h("div", { className: "dsh-tavern-library-head-actions" }, props.onAttach ? h("button", { className: "dsh-tavern-btn", onClick: props.onAttach }, "在对话中引用") : null, h("button", { className: "dsh-tavern-btn", onClick: props.onRename }, "重命名"), h("button", { className: "dsh-tavern-btn", onClick: props.onExport, title: "SillyTavern 人物卡 JSON" }, "导出 JSON"), props.onExportCharx ? h("button", { className: "dsh-tavern-btn", onClick: props.onExportCharx, title: "Character Card V3，带头像、立绘、背景等角色素材" }, "导出 CHARX") : null, h("button", { className: "dsh-tavern-btn danger", onClick: props.onDelete }, "删除")) : null
 				),
 				props.organizationSettings,
+                props.library ? h(CardLibraryInfoDetails, { key: props.view.card.path, path: props.view.card.path }) : null,
 				scriptHero,
 				h("div", { className: "dsh-tavern-card-fields" },
 					h("details", { ref: worldBookDetailsRef, open: true, className: "dsh-tavern-card-advanced dsh-tavern-card-worldbook", onToggle: function (event) { if (event.currentTarget.open) loadWorldBookCatalog(); } }, h("summary", null, "世界书 · " + boundWorldBooks.length + " 本"), worldBookPanel),

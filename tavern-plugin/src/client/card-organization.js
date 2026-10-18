@@ -47,7 +47,46 @@ function filterOrganizedCards(cards, filter, query) {
     && (filter === '*' || (filter === 'favorites' ? card.starred : (card.group || '') === filter.slice(6))));
 }
 
-function useCardOrganization(cards, busy, refresh, onError, batch) {
+function CardLibraryInfoDetails(props) {
+  const h = React.createElement;
+  const [info, setInfo] = React.useState(null);
+  const [draft, setDraft] = React.useState(null);
+  const [busy, setBusy] = React.useState(false);
+  const [error, setError] = React.useState('');
+  React.useEffect(() => {
+    let active = true;
+    rpc('getCardLibraryInfo', { path: props.path }).then(value => { if (active) setInfo(value); }, error => { if (active) setError(String(error.message || error)); });
+    return () => { active = false; };
+  }, [props.path]);
+  async function save() {
+    if (busy) return;
+    setBusy(true); setError('');
+    try {
+      const value = await rpc('setCardLibraryInfo', { path: props.path, summary: draft.summary,
+        labels: draft.labels.split(/[,，\n]/).map(label => label.trim()).filter(Boolean) });
+      setInfo(value); setDraft(null);
+      notifyTavernDataChanged(['cards'], 'card-library-info');
+      await props.onSaved?.();
+    } catch (error) { setError(String(error.message || error)); }
+    finally { setBusy(false); }
+  }
+  return h('section', { className: 'dsh-tavern-card-info-details', 'aria-label': '简介和标签' },
+    h('h4', null, '简介和标签'),
+    error ? h('div', { role: 'alert', className: 'dsh-tavern-dock-error' }, error) : null,
+    !info ? h('p', null, error ? '暂时无法读取' : '正在读取…') : draft ? h(React.Fragment, null,
+      h('label', null, '简介', h('textarea', { 'aria-label': '简介', rows: 6, maxLength: 4000, value: draft.summary, disabled: busy, onChange: event => setDraft({ ...draft, summary: event.target.value }) })),
+      h('label', null, '标签（逗号或换行分隔）', h('textarea', { 'aria-label': '标签', rows: 2, maxLength: 1000, value: draft.labels, disabled: busy, onChange: event => setDraft({ ...draft, labels: event.target.value }) })),
+      h('div', { className: 'dsh-tavern-card-info-actions' },
+        h('button', { className: 'dsh-tavern-btn', disabled: busy, onClick: save }, busy ? '保存中…' : '保存简介和标签'),
+        h('button', { className: 'dsh-tavern-btn', disabled: busy, onClick: () => { setDraft(null); setError(''); } }, '取消')))
+      : h(React.Fragment, null,
+        h('p', null, info.summary || '暂无简介'),
+        info.labels.length ? h('div', { className: 'dsh-tavern-card-labels' }, info.labels.map(label => h('span', { key: label }, label))) : h('p', null, '暂无标签'),
+        h('div', { className: 'dsh-tavern-card-info-actions' }, h('button', { className: 'dsh-tavern-btn', onClick: () => setDraft({ summary: info.summary, labels: info.labels.join('，') }) }, '编辑简介和标签'))));
+}
+
+function useCardOrganization(cards, busy, refresh, onError, batch, openDetails) {
+  const [detailCard, setDetailCard] = React.useState(null);
   const askConfirm = useTavernConfirm();
   const pins = useLibraryPins("card", onError);
   const h = React.createElement;
@@ -115,6 +154,12 @@ function useCardOrganization(cards, busy, refresh, onError, batch) {
       { value: 'group:', label: '未分组' }, ...groups.map(group => ({ value: 'group:' + group, label: group }))];
     const selected = choices.find(choice => choice.value === filter)?.label || '全部';
     return h(React.Fragment, null,
+      detailCard ? h('dialog', { className: 'dsh-tavern-group-manager', 'aria-label': '人物卡详情',
+        ref: element => { if (element && !element.open) element.showModal(); }, onCancel: () => setDetailCard(null)
+      }, h('div', { className: 'dsh-tavern-group-manager-content' },
+        h('h3', null, detailCard.name),
+        h(CardLibraryInfoDetails, { key: detailCard.path, path: detailCard.path, onSaved: refresh }),
+        h('button', { className: 'dsh-tavern-btn', onClick: () => setDetailCard(null) }, '关闭详情'))) : null,
       h('div', { className: 'dsh-tavern-card-organization' },
         h('details', { ref: menu, className: 'dsh-tavern-group-picker', onToggle: event => {
           const root = event.currentTarget;
@@ -189,21 +234,6 @@ function useCardOrganization(cards, busy, refresh, onError, batch) {
           } }, saving ? '添加中…' : '添加' + (addPaths.length ? '（' + addPaths.length + '）' : '')))
       )) : null);
   }
-  async function editLibraryInfo(card, field) {
-    try {
-      const current = await rpc('getCardLibraryInfo', { path: card.path });
-      await askTavernText({ title: field === 'summary' ? '人物卡简介' : '人物卡标签',
-        description: field === 'summary' ? '用于选卡时快速了解，默认留空。' : '用逗号或换行分隔，最多 20 个标签，每个最多 40 字。',
-        initialValue: field === 'summary' ? current.summary : (current.labels || []).join('，'),
-        multiline: true, allowEmpty: true, maxLength: field === 'summary' ? 4000 : 1000, confirmLabel: '保存',
-        onSubmit: async value => {
-          await rpc('setCardLibraryInfo', { path: card.path, [field]: field === 'summary' ? value : value.split(/[,，\n]/).map(label => label.trim()).filter(Boolean) });
-          await refresh();
-          notifyTavernDataChanged(['cards'], 'card-library-info');
-        }
-      });
-    } catch (error) { onError(String(error.message || error)); }
-  }
   function rowMenu(card) {
     return h('details', { className: 'dsh-tavern-card-row-menu',
       onBlur: event => { if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.open = false; },
@@ -222,8 +252,7 @@ function useCardOrganization(cards, busy, refresh, onError, batch) {
         ...(typeof HTMLElement !== 'undefined' && 'showPopover' in HTMLElement.prototype ? { popover: 'auto' } : {}),
         onToggle: event => { if (event.newState === 'closed' || event.nativeEvent?.newState === 'closed') event.currentTarget.closest('details').open = false; }
       },
-        h('button', { type: 'button', disabled, onClick: event => { event.currentTarget.closest('details').open = false; void editLibraryInfo(card, 'summary'); } }, '编辑简介'),
-        h('button', { type: 'button', disabled, onClick: event => { event.currentTarget.closest('details').open = false; void editLibraryInfo(card, 'labels'); } }, '编辑标签'),
+        h('button', { type: 'button', disabled, onClick: event => { event.currentTarget.closest('details').open = false; if (openDetails) openDetails(card); else setDetailCard(card); } }, '详情'),
         pins.button(card.path, disabled),
         h('div', { className: 'dsh-tavern-card-row-menu-title' }, '移到分组'),
         ['', ...groups].map(group => h('button', { key: group, type: 'button', disabled,

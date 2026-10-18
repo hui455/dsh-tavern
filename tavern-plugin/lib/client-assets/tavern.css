@@ -2877,5 +2877,14 @@ details.dsh-tavern-recall-guide > summary .dsh-tavern-recall-guide-heading > spa
 .dsh-tavern-card-summary { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; white-space: pre-wrap; font-size: 12px; line-height: 1.5; margin-top: 4px; }
 .dsh-tavern-card-labels { display: flex !important; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
 .dsh-tavern-card-labels > span { border-radius: 4px; padding: 1px 5px; background: color-mix(in srgb, currentColor 8%, transparent); font-size: 11px; overflow-wrap: anywhere; }
-.dsh-tavern-card-grid-item > .dsh-tavern-card-summary,.dsh-tavern-card-grid-item > .dsh-tavern-card-labels { padding-inline: 4px; }
+.dsh-tavern-card-grid-item > .dsh-tavern-card-summary { padding-inline: 4px; }
+.dsh-tavern-card-grid-item > .dsh-tavern-card-labels { position: absolute; top: 6px; left: 6px; right: 38px; z-index: 1; margin: 0; pointer-events: none; max-height: 48px; overflow: hidden; }
+.dsh-tavern-card-grid-item > .dsh-tavern-card-labels > span { background: rgba(20,20,24,.78); color: #fff; font-size: 10px; line-height: 18px; max-width: 100%; text-overflow: ellipsis; overflow: hidden; white-space: nowrap; }
+.dsh-tavern-card-grid-item:has(.dsh-tavern-card-grid-check) > .dsh-tavern-card-labels { left: 30px; }
+.dsh-tavern-card-info-details { padding: 12px; text-align: left; }
+.dsh-tavern-card-info-details h4 { margin: 8px 0; }
+.dsh-tavern-card-info-details p { white-space: pre-wrap; overflow-wrap: anywhere; }
+.dsh-tavern-card-info-details label { display: block; margin: 10px 0; }
+.dsh-tavern-card-info-details textarea { display: block; box-sizing: border-box; width: 100%; margin-top: 6px; resize: vertical; }
+.dsh-tavern-card-info-actions { display: flex; gap: 8px; margin-top: 12px; }
 textarea.dsh-tavern-prompt-input { resize: vertical; min-height: 120px; }
