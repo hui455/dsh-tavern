@@ -25,6 +25,7 @@ export function createResourceGraph(options = {}) {
     const renamed = await resources.rename(oldPath, operation.name)
     operation.result = renamed
     await checkpoint(operation, 'resource-renamed')
+    await options.libraryPins?.movePath(renamed.oldPath, renamed.path)
     const kind = resourceKind(oldPath)
     if (kind === 'card') {
       await options.cardOrganization?.movePath(renamed.oldPath, renamed.path)
@@ -79,6 +80,7 @@ export function createResourceGraph(options = {}) {
     const normalized = normalizeResourcePath(operation.path, operation.expectedKind)
     await resources.remove(normalized)
     await checkpoint(operation, 'resource-removed')
+    await options.libraryPins?.movePath(normalized, null)
     if (resourceKind(normalized) === 'card') await options.cardOrganization?.movePath(normalized, null)
     if (resourceKind(normalized) === 'preset' && presets && typeof presets.remove === 'function') await presets.remove(normalized)
     const index = await chats.readIndex()

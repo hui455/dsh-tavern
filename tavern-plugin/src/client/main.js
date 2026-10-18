@@ -491,6 +491,7 @@ window.__ModuleLoader__.load({
 			return detail.kinds.indexOf("*") >= 0 || expected.some(function (kind) { return detail.kinds.indexOf(kind) >= 0; });
 		}
 
+		// @include modules/library-pins.js
 		// @include modules/library-refresh.js
 
         const tavernSidebarOpens = new Map();

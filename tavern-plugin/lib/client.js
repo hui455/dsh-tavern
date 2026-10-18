@@ -1440,6 +1440,44 @@ window.__ModuleLoader__.load({
 			return detail.kinds.indexOf("*") >= 0 || expected.some(function (kind) { return detail.kinds.indexOf(kind) >= 0; });
 		}
 
+		function useLibraryPins(kind, onError) {
+		  const [pins, setPins] = React.useState([]);
+		  const [saving, setSaving] = React.useState(false);
+		  const running = React.useRef(false);
+		  React.useEffect(function () {
+		    let active = true;
+		    function refresh() {
+		      rpc('getLibraryPins', {}).then(state => { if (active) setPins(state[kind] || []); }, error => { if (active) onError(String(error.message || error)); });
+		    }
+		    refresh();
+		    window.addEventListener('dsh-tavern-library-pins-changed', refresh);
+		    window.addEventListener('dsh-tavern-data-changed', refresh);
+		    window.addEventListener('focus', refresh);
+		    return () => {
+		      active = false;
+		      window.removeEventListener('dsh-tavern-library-pins-changed', refresh);
+		      window.removeEventListener('dsh-tavern-data-changed', refresh);
+		      window.removeEventListener('focus', refresh);
+		    };
+		  }, [kind]);
+		  function button(path, disabled) {
+		    const pinned = pins.includes(path);
+		    return React.createElement('button', { type: 'button', className: 'dsh-tavern-btn', disabled: disabled || saving,
+		      'aria-pressed': pinned, onClick: async function (event) {
+		        event.stopPropagation();
+		        if (running.current) return;
+		        running.current = true; setSaving(true);
+		        try {
+		          const state = await rpc('setLibraryPin', { kind, path, pinned: !pinned });
+		          setPins(state[kind] || []);
+		          window.dispatchEvent(new Event('dsh-tavern-library-pins-changed'));
+		        } catch (error) { onError(String(error.message || error)); }
+		        finally { running.current = false; setSaving(false); }
+		      }
+		    }, pinned ? '取消置顶' : '置顶');
+		  }
+		  return { button, order: (items, pathOf = item => item.path) => items.slice().sort((a, b) => Number(pins.includes(pathOf(b))) - Number(pins.includes(pathOf(a)))) };
+		}
 		function createCardLibraryRefreshModule(options) {
 			const settings = options || {};
 			const schedule = typeof settings.schedule === "function" ? settings.schedule : function (run, delay) { return window.setTimeout(run, delay); };
@@ -13691,6 +13729,7 @@ function bindTavernFontZoom(node, win) {
 
 		function useCardOrganization(cards, busy, refresh, onError, batch) {
 		  const askConfirm = useTavernConfirm();
+		  const pins = useLibraryPins("card", onError);
 		  const h = React.createElement;
 		  const [groups, setGroups] = React.useState([]);
 		  const [query, setQuery] = React.useState('');
@@ -13746,7 +13785,7 @@ function bindTavernFontZoom(node, win) {
 		    });
 		  }
 		  const disabled = busy || saving;
-		  const visible = filterOrganizedCards(cards, filter, deferredQuery);
+		  const visible = pins.order(filterOrganizedCards(cards, filter, deferredQuery));
 		  function options() {
 		    return [h('option', { key: '', value: 'group:' }, '未分组'), ...groups.map(group => h('option', { key: group, value: 'group:' + group }, group))];
 		  }
@@ -13848,6 +13887,7 @@ function bindTavernFontZoom(node, win) {
 		        ...(typeof HTMLElement !== 'undefined' && 'showPopover' in HTMLElement.prototype ? { popover: 'auto' } : {}),
 		        onToggle: event => { if (event.newState === 'closed' || event.nativeEvent?.newState === 'closed') event.currentTarget.closest('details').open = false; }
 		      },
+		        pins.button(card.path, disabled),
 		        h('div', { className: 'dsh-tavern-card-row-menu-title' }, '移到分组'),
 		        ['', ...groups].map(group => h('button', { key: group, type: 'button', disabled,
 		          'aria-pressed': (card.group || '') === group,
@@ -16879,6 +16919,7 @@ function bindTavernFontZoom(node, win) {
 			function ExternalPresetLibraryTab(props) {
             const askConfirm = useTavernConfirm(props.sessionId || props.scope?.sessionId);
 				const [error, setError] = usePersistentError("预设库");
+                const pins = useLibraryPins("preset", setError);
 				const [catalog, refresh] = usePresetCatalog(props.scope.sessionId, setError, props.visible);
 				const [detailPath, setDetailPath] = React.useState("");
 				const [preset, setPreset] = React.useState(null);
@@ -17072,10 +17113,10 @@ function bindTavernFontZoom(node, win) {
 						h("p", null, h("strong", null, "前段："), "放在系统提示词开头，先告诉模型它是谁、故事背景是什么、要遵守哪些通用规则。"),
 						h("p", null, h("strong", null, "中段："), "放进每轮的任务说明，提醒模型这一轮该怎么写，比如叙事方式和文风。"),
 						h("p", null, h("strong", null, "后段："), "放在本轮发给模型的内容最末尾，最后再强调输出格式、篇幅等要求。")),
-					catalog.presets.length ? catalog.presets.map(function (item) {
+					catalog.presets.length ? pins.order(catalog.presets).map(function (item) {
 						return h("div", { key: item.path, className: "dsh-tavern-preset-row" },
 								h("div", { className: "dsh-tavern-preset-row-head" }, h("button", { className: "dsh-tavern-preset-row-main", disabled: busy, title: "查看并编辑预设", onClick: function () { loadPreset(item.path); } }, h("b", null, item.title), h("span", null, "前 " + Number(item.phaseCounts && item.phaseCounts.front || 0) + " · 中 " + Number(item.phaseCounts && item.phaseCounts.middle || 0) + " · 后 " + Number(item.phaseCounts && item.phaseCounts.back || 0) + " · 正则 " + item.regexCount))),
-							h("div", { className: "dsh-tavern-preset-row-actions" }, h("button", { className: "dsh-tavern-btn", disabled: busy, onClick: function () { loadPreset(item.path); } }, "打开预设 ›"), inCardMode ? h("button", { className: "dsh-tavern-resource-at", disabled: busy, onClick: function () { props.appendMention("preset", item.path, item.title); } }, "在对话中引用") : null)
+							h("div", { className: "dsh-tavern-preset-row-actions" }, pins.button(item.path, busy), h("button", { className: "dsh-tavern-btn", disabled: busy, onClick: function () { loadPreset(item.path); } }, "打开预设 ›"), inCardMode ? h("button", { className: "dsh-tavern-resource-at", disabled: busy, onClick: function () { props.appendMention("preset", item.path, item.title); } }, "在对话中引用") : null)
 						);
 					}) : h("div", { className: "dsh-tavern-status-empty" }, "还没有外部预设。请先导入。")));
 			}
@@ -17324,6 +17365,7 @@ function bindTavernFontZoom(node, win) {
 			);
 		}
 		function WorldBookLibraryTab(props) {
+            const pins = useLibraryPins("worldbook", error => setError(error));
             const askConfirm = useTavernConfirm(props.sessionId || props.scope?.sessionId);
 			const [catalog, setCatalog] = React.useState(null);
 			const [catalogWarning, setCatalogWarning] = React.useState("");
@@ -17481,8 +17523,8 @@ function bindTavernFontZoom(node, win) {
                             h("span", { className: "dsh-tavern-settings-track", "aria-hidden": "true" }))) : null,
                     bindingPanel()), onSaved: function (result) { setRecord(result); refresh(); } });
 			}
-			function row(item) { const source = item.kind === "card" ? { kind: "card", cardPath: item.cardPath } : { kind: "standalone", path: item.path }; const resourcePath = item.kind === "card" ? item.cardPath : item.path; return h("div", { key: resourcePath, className: "dsh-tavern-card-pick-wrap" }, h("button", { className: "dsh-tavern-library-card", disabled: busy, onClick: function () { load(source); } }, h("b", null, item.name), h("span", null, (item.globalEnabled ? "全局生效 · " : "") + item.entryCount + " 条 · " + item.enabledCount + " 条启用" + (item.diagnostics ? " · " + item.diagnostics + " 个诊断" : "")), item.cardName ? h("span", null, "来自人物卡：" + item.cardName) : null), sessionMode === "card" ? h("button", { className: "dsh-tavern-resource-at", title: "在对话中引用", onClick: function () { props.appendMention("worldbook", resourcePath, item.name); } }, "在对话中引用") : null); }
-			function group(title, items) { return h("section", { className: "dsh-tavern-resource-group" }, h("div", { className: "dsh-tavern-resource-group-title" }, h("span", null, title + " · " + items.length)), items.length ? items.map(row) : h("div", { className: "dsh-tavern-status-empty" }, searchQuery.trim() ? "没有匹配的世界书" : "暂无")); }
+			function row(item) { const source = item.kind === "card" ? { kind: "card", cardPath: item.cardPath } : { kind: "standalone", path: item.path }; const resourcePath = item.kind === "card" ? item.cardPath : item.path; return h("div", { key: resourcePath, className: "dsh-tavern-card-pick-wrap" }, h("button", { className: "dsh-tavern-library-card", disabled: busy, onClick: function () { load(source); } }, h("b", null, item.name), h("span", null, (item.globalEnabled ? "全局生效 · " : "") + item.entryCount + " 条 · " + item.enabledCount + " 条启用" + (item.diagnostics ? " · " + item.diagnostics + " 个诊断" : "")), item.cardName ? h("span", null, "来自人物卡：" + item.cardName) : null), pins.button(resourcePath, busy), sessionMode === "card" ? h("button", { className: "dsh-tavern-resource-at", title: "在对话中引用", onClick: function () { props.appendMention("worldbook", resourcePath, item.name); } }, "在对话中引用") : null); }
+			function group(title, items) { return h("section", { className: "dsh-tavern-resource-group" }, h("div", { className: "dsh-tavern-resource-group-title" }, h("span", null, title + " · " + items.length)), items.length ? pins.order(items, item => item.cardPath || item.path).map(row) : h("div", { className: "dsh-tavern-status-empty" }, searchQuery.trim() ? "没有匹配的世界书" : "暂无")); }
 			return h("div", { className: "dsh-tavern-library" }, h("div", { className: "dsh-tavern-status-head" }, h("div", { className: "dsh-tavern-status-title" }, "世界书库"), h("div", { className: "dsh-tavern-question-sub" }, "独立世界书与人物卡内置世界书共用编辑界面"), h("button", { className: "dsh-tavern-btn primary", disabled: busy, onClick: function () { importInput.current && importInput.current.click(); } }, "导入世界书"), h("input", { ref: importInput, type: "file", accept: ".json,application/json", style: { display: "none" }, onChange: function (event) { const file = event.target.files && event.target.files[0]; importFile(file); event.target.value = ""; } })), h("div", { className: "dsh-tavern-resource-body" },
 				h(WorldBookRecallGuide),
 				h("div", { className: "dsh-tavern-worldbook-toolbar" },

@@ -49,6 +49,7 @@ function filterOrganizedCards(cards, filter, query) {
 
 function useCardOrganization(cards, busy, refresh, onError, batch) {
   const askConfirm = useTavernConfirm();
+  const pins = useLibraryPins("card", onError);
   const h = React.createElement;
   const [groups, setGroups] = React.useState([]);
   const [query, setQuery] = React.useState('');
@@ -104,7 +105,7 @@ function useCardOrganization(cards, busy, refresh, onError, batch) {
     });
   }
   const disabled = busy || saving;
-  const visible = filterOrganizedCards(cards, filter, deferredQuery);
+  const visible = pins.order(filterOrganizedCards(cards, filter, deferredQuery));
   function options() {
     return [h('option', { key: '', value: 'group:' }, '未分组'), ...groups.map(group => h('option', { key: group, value: 'group:' + group }, group))];
   }
@@ -206,6 +207,7 @@ function useCardOrganization(cards, busy, refresh, onError, batch) {
         ...(typeof HTMLElement !== 'undefined' && 'showPopover' in HTMLElement.prototype ? { popover: 'auto' } : {}),
         onToggle: event => { if (event.newState === 'closed' || event.nativeEvent?.newState === 'closed') event.currentTarget.closest('details').open = false; }
       },
+        pins.button(card.path, disabled),
         h('div', { className: 'dsh-tavern-card-row-menu-title' }, '移到分组'),
         ['', ...groups].map(group => h('button', { key: group, type: 'button', disabled,
           'aria-pressed': (card.group || '') === group,

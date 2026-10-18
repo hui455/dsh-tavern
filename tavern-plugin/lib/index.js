@@ -237,6 +237,7 @@ import {
 import { createProfileDataStore } from './profile-data-store.js'
 import { createChatPersistence } from './domain/chat-persistence.js'
 import { createChatJournalStore } from './domain/chat-journal-store.js'
+import { createLibraryPins } from './domain/library-pins.js'
 import { createResourceGraph } from './domain/resource-graph.js'
 import { normalizeBackgroundTasks, applyTavernSettingsPatch, presentTavernSettings, resolveSystemPrompt } from './domain/tavern-settings.js'
 // Runtime reads go through runtimePrompt() so panel overrides apply; the raw
@@ -359,6 +360,7 @@ export async function apply(ctx) {
   }
   ctx.effect(() => () => templateSync.dispose())
   ctx.effect(() => () => fullTemplateRuntime.dispose())
+  const libraryPins = createLibraryPins(profileData)
   const cardOrganization = createCardOrganization(profileData)
   const worldbookRecallLog = createWorldbookRecallLog({ store: profileData })
   const guideLibrary = createGuideLibrary({ store: profileData })
@@ -1033,6 +1035,7 @@ export async function apply(ctx) {
   // Voiced dialogue: channels are Tavern's and the plugins' (pluginApi is created later; read lazily).
   const speech = createSpeech({ store: profileData, credentials: () => ctx.get('credentials'), plugins: () => pluginApi.speechProviders() })
   resourceGraph = createResourceGraph({
+    libraryPins,
     castAssets,
     cardOrganization,
     resources: fileResources,
@@ -1335,7 +1338,10 @@ export async function apply(ctx) {
     const plugins = (await castAssets.read(normalizeResourcePath(cardPath, 'card')).catch(() => null))?.plugins || []
     const result = await cardDeletion.remove(cardPath)
     if (result.deleted && plugins.length) await cardPlugins.remove({ cardKey: castAssets.keyOf(normalizeResourcePath(cardPath, 'card')), plugins }).catch(error => console.warn('dsh-tavern: 删除卡内插件失败', error?.message || error))
-    if (result.deleted) await cardOrganization.movePath(normalizeResourcePath(cardPath, 'card'), null)
+    if (result.deleted) {
+      await cardOrganization.movePath(normalizeResourcePath(cardPath, 'card'), null)
+      await libraryPins.movePath(normalizeResourcePath(cardPath, 'card'), null)
+    }
     return result
   }
   const sessionInventory = createSessionInventory({
@@ -4138,6 +4144,11 @@ export async function apply(ctx) {
         if (!chatId) throw new Error('找不到当前存档')
         return method === 'getStorageMigration' ? conversationMigration.status(chatId) : conversationMigration.start(chatId)
       }
+      case 'getLibraryPins': return await libraryPins.read()
+      case 'setLibraryPin': {
+        if (await fileResources.readText(args?.path) === undefined) throw new Error('资源不存在')
+        return await libraryPins.set(args?.kind, args?.path, args?.pinned)
+      }
       case 'getCardOrganization': return { groups: (await cardOrganization.read()).groups }
       case 'organizeCards': return { groups: (await cardOrganization.update(args || {}, await fileResources.list('card'))).groups }
       case 'listCards': return { cards: await listCards() }
@@ -4272,7 +4283,13 @@ export async function apply(ctx) {
       case 'importWorldBook': return { worldBook: await worldBooks.import(args && args.payload) }
       case 'updateWorldBook': return await worldBooks.update(args && args.source, args && args.update)
       case 'exportWorldBook': return { worldBook: await worldBooks.export(args && args.source) }
-      case 'deleteWorldBook': return await worldBooks.remove(args && (args.source || args.path))
+      case 'deleteWorldBook': {
+        const source = args && (args.source || args.path)
+        const result = await worldBooks.remove(source)
+        const path = typeof source === 'string' ? source : source?.cardPath || source?.path
+        if (path) await libraryPins.set('worldbook', path, false)
+        return result
+      }
       case 'listPresets': return await presetLibrary.catalog()
       case 'selectPreset': return await presetLibrary.select(args && args.path)
       case 'applyConversationPreset': {

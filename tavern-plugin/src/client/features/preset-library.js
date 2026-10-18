@@ -29,6 +29,7 @@
 			function ExternalPresetLibraryTab(props) {
             const askConfirm = useTavernConfirm(props.sessionId || props.scope?.sessionId);
 				const [error, setError] = usePersistentError("预设库");
+                const pins = useLibraryPins("preset", setError);
 				const [catalog, refresh] = usePresetCatalog(props.scope.sessionId, setError, props.visible);
 				const [detailPath, setDetailPath] = React.useState("");
 				const [preset, setPreset] = React.useState(null);
@@ -222,10 +223,10 @@
 						h("p", null, h("strong", null, "前段："), "放在系统提示词开头，先告诉模型它是谁、故事背景是什么、要遵守哪些通用规则。"),
 						h("p", null, h("strong", null, "中段："), "放进每轮的任务说明，提醒模型这一轮该怎么写，比如叙事方式和文风。"),
 						h("p", null, h("strong", null, "后段："), "放在本轮发给模型的内容最末尾，最后再强调输出格式、篇幅等要求。")),
-					catalog.presets.length ? catalog.presets.map(function (item) {
+					catalog.presets.length ? pins.order(catalog.presets).map(function (item) {
 						return h("div", { key: item.path, className: "dsh-tavern-preset-row" },
 								h("div", { className: "dsh-tavern-preset-row-head" }, h("button", { className: "dsh-tavern-preset-row-main", disabled: busy, title: "查看并编辑预设", onClick: function () { loadPreset(item.path); } }, h("b", null, item.title), h("span", null, "前 " + Number(item.phaseCounts && item.phaseCounts.front || 0) + " · 中 " + Number(item.phaseCounts && item.phaseCounts.middle || 0) + " · 后 " + Number(item.phaseCounts && item.phaseCounts.back || 0) + " · 正则 " + item.regexCount))),
-							h("div", { className: "dsh-tavern-preset-row-actions" }, h("button", { className: "dsh-tavern-btn", disabled: busy, onClick: function () { loadPreset(item.path); } }, "打开预设 ›"), inCardMode ? h("button", { className: "dsh-tavern-resource-at", disabled: busy, onClick: function () { props.appendMention("preset", item.path, item.title); } }, "在对话中引用") : null)
+							h("div", { className: "dsh-tavern-preset-row-actions" }, pins.button(item.path, busy), h("button", { className: "dsh-tavern-btn", disabled: busy, onClick: function () { loadPreset(item.path); } }, "打开预设 ›"), inCardMode ? h("button", { className: "dsh-tavern-resource-at", disabled: busy, onClick: function () { props.appendMention("preset", item.path, item.title); } }, "在对话中引用") : null)
 						);
 					}) : h("div", { className: "dsh-tavern-status-empty" }, "还没有外部预设。请先导入。")));
 			}
