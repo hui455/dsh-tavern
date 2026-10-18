@@ -16,6 +16,55 @@ const imagePath = 'scene-images/' + createHash('sha256').update('test-chat').dig
 const chatFixture = () => ({ id: 'test-chat', mode: 'story', sessionId: 'parent', settleStatus: 'done', posture: '站在窗边，左手扶窗', messages: [{ role: 'user', text: '走到窗边' }, { role: 'assistant', turn: 2, sourceText: '她站在窗边看雨。', swipes: ['她站在窗边看雨。', '她坐在椅子上。'], swipeId: 0 }] })
 const planFixture = (tags = 'A woman standing at a rainy window') => ({ description: '窗边一景', subjects: [], characters: [], continuity: 'uncertain', scene: { composition: { text: '窗边一景', tags } } })
 
+for (const referenceCapable of [false, true]) test('character review gates scene generation, persists approval and uses ' + (referenceCapable ? 'authorized portrait' : 'confirmed text'), async t => {
+  const requests = [], reviewSessions = []
+  const fx = await fixture(t, {
+    runAgent: async input => {
+      if (input.tools.some(tool => tool.name === 'submit_character_look')) {
+        reviewSessions.push(input.persistentSessionId)
+        await input.onPersistentSessionReady('independent-look-session')
+        assert.match(input.messages[0].content[0].text, /银色短发/)
+        await input.onToolCall({ name: 'submit_character_look', arguments: { appearance: '成年女性，银色短发', tags: 'adult woman, short silver hair', reply: '已按要求调整发型，请生成定妆图确认。' } })
+      } else await submitPlanCall(input, { arguments: { plan: { ...planFixture(), subjects: ['p'], characters: [{ id: 'p', name: '林岚', fields: { appearance: { text: '成年女性，黑色长发', tags: 'adult woman, long black hair' } } }] } } })
+      return { traceSessionId: 'plan-session' }
+    },
+    generate: async input => { requests.push(input); return { data: png, mediaType: 'image/png' } }
+  })
+  if (referenceCapable) await fx.service.configure({ provider: 'gemini', baseURL: 'https://provider.example/v1', model: 'gemini-3.1-flash-image', apiKey: 'fixture-key' })
+  await fx.service.configure({ enabled: true, confirmCharacters: true })
+  const key = sceneTarget(fx.chat(), 2).key, address = { sessionId: 'parent', turn: 2, key }
+  await fx.service.start('parent', 2, key)
+  await until(async () => (await fx.service.status('parent', 2)).status === 'awaiting-characters')
+  assert.equal(requests.length, 0)
+  let data = await fx.service.looks('parent', 2, key), person = data.people[0]
+  await assert.rejects(fx.service.changeLook({ ...address, personId: person.id, revision: 1, action: 'confirm', requestId: 'confirm-before-image', consent: data.capability.gateway }), /先生成/)
+  await fx.service.changeLook({ ...address, personId: person.id, revision: 1, action: 'discuss', requestId: 'look-discussion-one', message: '改为银色短发' })
+  await until(async () => !(await fx.service.looks('parent', 2, key)).people[0].busy)
+  person = (await fx.service.looks('parent', 2, key)).people[0]
+  assert.equal(person.revision, 2)
+  assert.equal(person.agentSessionId, 'independent-look-session')
+  assert.equal(person.history.length, 2)
+  await fx.service.changeLook({ ...address, personId: person.id, revision: 2, action: 'portrait', requestId: 'portrait-request-one' })
+  await until(async () => !(await fx.service.looks('parent', 2, key)).people[0].busy)
+  data = await fx.service.looks('parent', 2, key); person = data.people[0]
+  assert.ok(person.candidate, person.error)
+  assert.equal(requests.length, 1)
+  assert.match(requests[0].prompt, /short silver hair/)
+  const restarted = fx.createService()
+  assert.ok((await restarted.looks('parent', 2, key)).people[0].candidate)
+  assert.ok((await restarted.readLookImage({ ...address, personId: person.id, candidateId: person.candidate.id })).data.length)
+  await assert.rejects(restarted.changeLook({ ...address, personId: person.id, revision: 2, action: 'confirm', requestId: 'confirm-stale-picture', candidateId: 'old-picture', consent: data.capability.gateway }), /定妆图已变化/)
+  await restarted.changeLook({ ...address, personId: person.id, revision: 2, action: 'confirm', requestId: 'confirm-character-one', candidateId: person.candidate.id, consent: data.capability.gateway })
+  await restarted.start('parent', 2, key, { requestId: 'resume-scene-request' })
+  await until(async () => (await restarted.status('parent', 2)).status === 'succeeded')
+  assert.equal(requests.length, 2)
+  assert.match(requests[1].prompt, /short silver hair/)
+  assert.doesNotMatch(requests[1].prompt, /long black hair/)
+  assert.equal(requests[1].referenceImages.length, referenceCapable ? 1 : 0)
+  assert.equal(JSON.stringify(fx.chat()), JSON.stringify(chatFixture()), 'review does not mutate story or variables')
+  await assert.rejects(restarted.changeLook({ ...address, personId: person.id, revision: 1, action: 'discuss', requestId: 'stale-review-request', message: '旧意见' }), /已变化/)
+})
+
 // Scripted model adapter: existing scenario fixtures are emitted through the new tools.
 async function submitPlanCall(input, call) {
   const { characters = [], expressions = [], ...layout } = call.arguments.plan

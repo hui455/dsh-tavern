@@ -24,8 +24,16 @@ if (['1', 'multi'].includes(process.env.SCENE_BROWSER_REFERENCE)) {
 }
 if (process.env.SCENE_BROWSER_COMFY_WORKFLOW === '1') await runtime.service.configure({ provider: 'comfyui', baseURL: runtime.endpoint, workflow: comfyGraph() })
 await runtime.service.configure({ enabled: false })
+if (process.env.SCENE_BROWSER_LOOKS === '1') {
+  runtime.chat.settleStatus = 'done'
+  runtime.chat.characterDesignDocument = { revision: 1, characters: [{ name: '林岚', design: { appearance: '成年女性，黑色短发' } }] }
+  runtime.lookupCharacterDesigns('林岚')
+  await runtime.service.configure({ enabled: true, confirmCharacters: true })
+}
 const bootUrl = pathToFileURL(process.env.DSH_BOOT_MODULE)
-const require = createRequire(new URL('../../dsh-client-ui-trajectory/package.json', bootUrl))
+const hostRequire = createRequire(new URL('../../dsh-client-ui-trajectory/package.json', bootUrl))
+const sourceRequire = createRequire(new URL('../../package.json', import.meta.url))
+const require = { resolve(name) { try { return hostRequire.resolve(name) } catch { return sourceRequire.resolve(name) } } }
 let bundle = 'const modules={};\n'
 const modules = ['react', 'scheduler', 'react-dom', 'react-dom/client']
 const files = [['react.production.js', 'react.production.min.js'], ['scheduler.production.js', 'scheduler.production.min.js'], ['react-dom.production.js', 'react-dom.production.min.js'], ['react-dom-client.production.js', 'react-dom-client.production.min.js']]
@@ -45,12 +53,12 @@ const client = await readFile(new URL('../../tavern-plugin/lib/client.js', impor
 // The real sidebar populates this session metadata cache; this isolated host has
 // no sidebar. Seed only that metadata, leaving the registered dock/renderers intact.
 // This fixture has a fixed story; image actions refresh through their DOM events.
-const fixtureClient = client.replace('const tavernSessionModes = { values: {},', 'const tavernSessionModes = { values: {"scene-parent":"story"},').replace('let tavernSessionSignals;', 'let tavernSessionSignals = { subscribe: () => () => {} };')
+const fixtureClient = client.replace('const tavernSessionModes = { values: {},', 'const tavernSessionModes = { values: {"scene-parent":"story"},').replace('let tavernSessionSignals;', 'let tavernSessionSignals = { subscribe: () => () => {} };').replace('exports.createTavernAssistantRendererFeatureModule =', 'exports.SceneImageAction = SceneImageAction; exports.createTavernAssistantRendererFeatureModule =')
 const settingsSource = client.slice(client.indexOf('function SceneImageSettings()'), client.indexOf('function createGlobalSettingsModule('))
 const css = await readFile(new URL('../../tavern-plugin/lib/client-assets/tavern.css', import.meta.url), 'utf8')
 const script = `${bundle}
 const React=modules.react;
-const primitives={MarkdownText:props=>React.createElement('p',null,props.text)};
+const primitives={MarkdownText:props=>React.createElement('p',null,props.text),Tooltip:props=>props.children};
 window.__ModuleLoader__={load(d){window.client=d.factory(name=>modules[name]||primitives);}};
 ${fixtureClient}
 const components={};
@@ -60,12 +68,13 @@ client.createPlayControlsFeatureModule().register({ctx:{get:()=>undefined,effect
 const root=modules['react-dom/client'].createRoot(document.querySelector('#app'));
 const props={sessionId:'scene-parent',node:{data:{status:'completed',blocks:[],finalNode:{seq:1}},location:{kind:'turn',turn:{turn:1,status:'closed'}}},useTurnData:()=>null,fileMentions:()=>undefined};
 root.render(React.createElement(components['assistant-step'],props));
-const dockProps={sessionId:'scene-parent',useSession:select=>select({running:false}),useChat:select=>select({legacy:{nodes:[{kind:'assistant',messageId:'fixture-reply'}]}})};
+const dockProps={sessionId:'scene-parent',useInput:select=>select({draft:''}),useSession:select=>select({running:false}),useChat:select=>select({legacy:{nodes:[{kind:'assistant',messageId:'fixture-reply'}]}})};
 modules['react-dom/client'].createRoot(document.querySelector('#dock')).render(React.createElement(dockSlots['dsh-tavern-candidate-actions'],dockProps));
 modules['react-dom/client'].createRoot(document.querySelector('#regen')).render(React.createElement(dockSlots['dsh-tavern-regen'],dockProps));
 const rpc=async(method,args={})=>{const response=await fetch('/api/dsh-tavern/'+method,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(args)});const result=await response.json();if(!result.ok)throw Error(result.error);return result;};
 ${settingsSource}
 modules['react-dom/client'].createRoot(document.querySelector('#settings')).render(React.createElement(SceneImageSettings));
+if (${process.env.SCENE_BROWSER_LOOKS === '1'}) { const mount=document.createElement('div');document.querySelector('#app').after(mount);modules['react-dom/client'].createRoot(mount).render(React.createElement(client.SceneImageAction,{sessionId:'scene-parent',turn:1})); }
 document.querySelector('#restart').onclick=async()=>{await rpc('fixtureRestart');location.reload();};
 document.querySelector('#swipe').onclick=async()=>{await rpc('fixtureSwipe');location.reload();};
 document.querySelector('#fail').onclick=async()=>{await rpc('fixtureFail');location.reload();};
@@ -90,6 +99,10 @@ const server = createServer(async (req, res) => {
       const image = await runtime.service.readImage('scene-parent', 1, url.searchParams.get('key'), url.searchParams.get('versionId'))
       res.writeHead(200, { 'Content-Type': image.ref.mediaType }).end(image.data); return
     }
+    if (method === 'scene-character-image') {
+      const image = await runtime.service.readLookImage({ sessionId: 'scene-parent', turn: 1, key: url.searchParams.get('key'), personId: url.searchParams.get('personId'), candidateId: url.searchParams.get('candidateId') })
+      res.writeHead(200, { 'Content-Type': image.ref.mediaType }).end(image.data); return
+    }
     let body = ''; for await (const chunk of req) body += chunk
     const args = body ? JSON.parse(body) : {}
     let result = {}
@@ -97,6 +110,8 @@ const server = createServer(async (req, res) => {
     else if (method === 'getSceneImageSettings') result = { settings: await runtime.service.settings(args?.provider) }
     else if (method === 'saveSceneImageSettings') result = { settings: await runtime.service.configure(args) }
     else if (method === 'sceneImageStatus') result = { illustration: await runtime.service.status('scene-parent', 1) }
+    else if (method === 'sceneCharacterLooks') result = await runtime.service.looks('scene-parent', 1, args.key)
+    else if (method === 'changeSceneCharacterLook') result = await runtime.service.changeLook({ ...args, sessionId: 'scene-parent', turn: 1 })
     else if (method === 'generateSceneImage') result = { illustration: await runtime.service.start('scene-parent', 1, args.key, args) }
     else if (method === 'retrySceneImageSave') result = { illustration: await runtime.service.retrySave('scene-parent', 1, args.key, args.requestId) }
     else if (method === 'cancelSceneImage') result = { illustration: await runtime.service.cancel('scene-parent', 1, args.key, args.requestId) }

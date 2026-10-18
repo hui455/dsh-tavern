@@ -10,6 +10,7 @@ import { SCENE_DRAFT_TOOLS, SCENE_PLAN_MAX_FAILURES, updateSceneDraft, assembleS
 import { readScenePlanInstruction, readSceneAdjustmentInstruction } from '../scene-image-prompts.js'
 import { imageAdjustmentInput, applyImageAdjustment, legacyImagePlan, SCENE_ADJUSTMENT_TOOL } from './scene-image-adjustment.js'
 import { createSceneImageStyles, applyImageStyle, composeSceneImagePrompt, styleWrittenByAgent, legacyStyleLabel } from './scene-image-style.js'
+import { createSceneCharacterLooks } from './scene-character-looks.js'
 import { createPendingSceneImages } from './scene-image-pending.js'
 import { createSceneImageQueue } from './scene-image-queue.js'
 import { createSceneReferences } from './scene-references.js'
@@ -149,6 +150,23 @@ export function createSceneIllustrations(deps) {
   const pendingImages = createPendingSceneImages(deps.store)
   const imageQueue = createSceneImageQueue(deps)
   const imageReferences = createSceneImageReferences({ store: deps.store })
+  const characterLooks = createSceneCharacterLooks({ store: deps.store, runAgent: deps.runAgent, selection: deps.selection,
+    readImage: attachment => deps.attachments().readImage(attachment),
+    generate: async ({ person, config: expected, requestId, signal }) => {
+      const { active, apiKey } = await capture()
+      if (!active.enabled || !channelReady(active, apiKey)) throw new Error('请先开启并配置场景生图')
+      if (JSON.stringify(channelSettings(active)) !== JSON.stringify(channelSettings(expected))) throw new Error('生图配置已变化，请刷新形象对话后再试')
+      const profile = imageExpressionProfile(active)
+      const portraitPlan = { description: person.name + '定妆图', subjects: [person.id], people: [{ id: person.id, name: person.name }],
+        blocks: [{ owner: person.id, field: 'appearance', text: person.appearance, tags: person.tags }],
+        prompt: 'Single person character design portrait, neutral background, clear face and identifying features.\n' + person.tags + (active.style?.preset === 'auto' && active.style.custom ? '\nVisual style preference: ' + active.style.custom : '') }
+      const plan = applyImageStyle(portraitPlan, await styles.resolve(active.style, profile, null))
+      let result
+      try { result = await imageQueue.run({ requestId, signal }, () => imageModule.generate({ ...active, apiKey, plan, prompt: composeSceneImagePrompt(plan), referenceImages: [], signal, maxBytes: deps.attachments().imageLimits?.maxImageBytes })) }
+      catch (error) { error.message = redactImageError(error.message, apiKey); throw error }
+      const attachment = result.attachment || await deps.attachments().saveImage({ data: result.data, mediaType: result.mediaType, name: 'character-look' })
+      return { attachment, configuration: { provider: active.provider, model: active.model }, prompt: composeSceneImagePrompt(plan), createdAt: Date.now() }
+    } })
   const pathFor = (chatId, key) => 'scene-images/' + hash(String(chatId)) + '/' + key + '.json'
   // Coalesce simultaneous display reads; never cache across completed reads or mutations.
   const statusReads = new Map()
@@ -219,7 +237,7 @@ export function createSceneIllustrations(deps) {
     }, config: current })
     const latestTurn = chat.sceneTargets ? Number(chat.sceneLatestTurn) : Number(last?.turn || (last?.greeting ? 1 : 0))
     // Only the newest round can still be drawn automatically.
-    const shared = { enabled: current.enabled === true, auto: current.enabled === true && current.auto === true && latestTurn === Number(turn), profile: imageExpressionProfile(current) }
+    const shared = { enabled: current.enabled === true, confirmCharacters: current.confirmCharacters === true, auto: current.enabled === true && current.auto === true && latestTurn === Number(turn), profile: imageExpressionProfile(current) }
     const referenceOf = key => ({ ...reference.capability, warning: reference.warning,
       bindings: reference.active.filter(record => record.source.key === key).map(record => ({ versionId: record.source.versionId, personId: record.person.id, name: record.person.name })),
       versions: reference.active.filter(record => record.source.key === key).map(record => record.source.versionId) })
@@ -406,6 +424,10 @@ export function createSceneIllustrations(deps) {
         const snapshot = sceneInput(chat, target, historical)
         const basic = sceneSources(chat, target, snapshot)
         prepared = await plans.prepare({ chatId: chat.id, target, ...basic, profile, autoStyle: styleWrittenByAgent(active.style), stylePreference: active.style?.custom?.trim() || '', replan: kind === 'replan' })
+        if (active.confirmCharacters) {
+          const knownLooks = await characterLooks.list(chat.id, Object.keys(prepared.people || {}), active)
+          prepared.input.confirmedLooks = knownLooks.people.filter(person => person.approved).map(person => ({ id: person.id, name: person.name, appearance: person.confirmed.appearance, tags: person.confirmed.tags }))
+        }
         // A previous picture of an earlier moment did not see the rest of its turn: include that turn again.
         const sinceTurn = prepared.previousTurn === undefined ? target.turn : prepared.previousMoment === 'earlier' ? prepared.previousTurn - 1 : prepared.previousTurn
         material = sceneSources(chat, target, snapshot, sinceTurn)
@@ -485,6 +507,23 @@ export function createSceneIllustrations(deps) {
     }
     async function deliverImage() {
       controller.signal.throwIfAborted()
+      let lookReferences
+      if (active.confirmCharacters) {
+        await characterLooks.ensure(input.chatId, plan)
+        lookReferences = await characterLooks.apply(input.chatId, plan, active)
+        if (lookReferences.pending.length) {
+          record.status = 'awaiting-characters'
+          record.stage = 'awaiting-characters'
+          record.outcome = 'not_requested'
+          record.pendingCharacters = lookReferences.pending
+          record.plan = plan
+          record.requests[record.requestId] = { status: record.status, outcome: record.outcome }
+          await writeJob(path, record)
+          return false
+        }
+        plan = lookReferences.plan
+        delete record.pendingCharacters
+      }
       plan = applyImageStyle(plan, await input.styleOf(plan))
       const prompt = composeSceneImagePrompt(plan)
       record.planId = plan.id
@@ -499,9 +538,18 @@ export function createSceneIllustrations(deps) {
       clearTimeout(timer)
       const generated = await imageQueue.run({ requestId: record.requestId, signal: controller.signal }, async () => {
         timer = setTimeout(() => controller.abort(), deps.timeoutMs || 300000)
+        if (lookReferences) {
+          const latest = await characterLooks.apply(input.chatId, plan, active)
+          if (latest.pending.length || latest.approvalToken !== lookReferences.approvalToken) throw new Error('排队期间人物形象已变化，请重新确认后再配图；尚未请求图片')
+        }
         const reference = await imageReferences.load({ selected: input.selectedImageReferences, plan,
           readImage: attachment => deps.attachments().readImage(attachment),
           readVersion: async source => versionsOf(await deps.store.readJson(pathFor(input.chatId, source.key))).find(version => version.id === source.versionId) })
+        if (lookReferences) {
+          // Confirmed character portraits own identity when the review flow is on.
+          reference.images = lookReferences.images
+          reference.warnings = lookReferences.warnings
+        }
         record.referenceImages = reference.images.map(image => image.reference)
         record.referenceWarning = reference.warnings.join(' ')
         record.diagnostics.imageReferences = { references: record.referenceImages, warnings: reference.warnings }
@@ -530,7 +578,8 @@ export function createSceneIllustrations(deps) {
       // One paid attempt per user action. Repeated tool calls reuse the receipt.
       delivery ||= (async () => {
         try {
-          await deliverImage()
+          if (await deliverImage() === false) return JSON.stringify({ ok: true, status: 'awaiting-characters',
+            message: '发现尚未确认形象的人物，已暂停剧情配图。请用户在人物形象对话中生成并确认定妆图；尚未请求剧情图片，不要声称完成或再次提交。' })
           return JSON.stringify({ ok: true, status: 'succeeded', versionId: record.requestId,
             message: '方案已校验保存，图片已生成并保存。请简短告知用户完成，不要再次调用生图工具。' })
         } catch (error) {
@@ -830,7 +879,30 @@ export function createSceneIllustrations(deps) {
     }
     return results
   }
-  return { settings, configure, readArtistPreview: setup.readArtistPreview, testConnection: connection.test, listModels: connection.models, testGenerate, status, start, autoGenerate, cancel, retrySave, readImage, exportImages, isAgentSession, undoAgentTurn, removeImage, setReference, history, readStoredImage, removeStoredImages,
-    async dispose() { for (const job of jobs.values()) job.controller.abort(); await Promise.allSettled([...jobs.values()].map(job => job.promise)); imageHosts.delete(ownerId); imageAborters.delete(ownerId) }
+  async function lookContext(sessionId, turn, key) {
+    const resolved = await resolve(sessionId, turn, undefined, key)
+    if (resolved.target.key !== key) throw new Error('正文已变化，请刷新人物形象对话')
+    const record = await readRecord(resolved.path)
+    if (!record?.plan) throw new Error('请先为这一轮整理画面方案')
+    await characterLooks.ensure(resolved.chat.id, record.plan)
+    return { ...resolved, record, active: await config() }
+  }
+  async function looks(sessionId, turn, key) {
+    const { chat, record, active } = await lookContext(sessionId, turn, key)
+    return characterLooks.list(chat.id, record.plan.subjects || [], active)
+  }
+  async function changeLook(input) {
+    const { chat, record, active } = await lookContext(input.sessionId, input.turn, input.key)
+    if (!(record.plan.subjects || []).includes(input.personId)) throw new Error('人物不属于当前画面')
+    await characterLooks.start({ ...input, chatId: chat.id, config: active })
+    return characterLooks.list(chat.id, record.plan.subjects || [], active)
+  }
+  async function readLookImage(input) {
+    const { chat, record } = await lookContext(input.sessionId, input.turn, input.key)
+    if (!(record.plan.subjects || []).includes(input.personId)) throw new Error('人物不属于当前画面')
+    return characterLooks.image(chat.id, input.personId, input.candidateId)
+  }
+  return { settings, configure, looks, changeLook, readLookImage, readArtistPreview: setup.readArtistPreview, testConnection: connection.test, listModels: connection.models, testGenerate, status, start, autoGenerate, cancel, retrySave, readImage, exportImages, isAgentSession, undoAgentTurn, removeImage, setReference, history, readStoredImage, removeStoredImages,
+    async dispose() { for (const job of jobs.values()) job.controller.abort(); await Promise.allSettled([...jobs.values()].map(job => job.promise)); await characterLooks.dispose(); imageHosts.delete(ownerId); imageAborters.delete(ownerId) }
   }
 }

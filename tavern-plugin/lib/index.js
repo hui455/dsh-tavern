@@ -4411,6 +4411,8 @@ export async function apply(ctx) {
       case 'castImportSpritePack': return await castEdit(args && args.sessionId, (cardPath, card) => castAssets.importSpritePack({ cardPath, name: str(args.name).trim() || card.name || undefined, bytes: Buffer.from(str(args.data), 'base64') }))
       case 'pluginMediaTurns': return await pluginMediaTurns(args && args.sessionId)
       case 'sceneImageStatus': return { illustration: await enabledSceneIllustrations().status(args.sessionId, args.turn) }
+      case 'sceneCharacterLooks': return await enabledSceneIllustrations().looks(args.sessionId, args.turn, args.key)
+      case 'changeSceneCharacterLook': return await enabledSceneIllustrations().changeLook(args)
       case 'recordSceneImageInteraction': {
         enabledSceneIllustrations()
         const chat = await backgroundConfigForSession(str(args.sessionId))

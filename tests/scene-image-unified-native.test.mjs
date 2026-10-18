@@ -3,6 +3,44 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createSceneImageNativeRuntime } from './fixtures/scene-image-native-runtime.mjs'
 
+test('真实 DSH 独立形象子对话、定妆附件、确认和剧情恢复', { skip: !process.env.DSH_BOOT_MODULE }, async t => {
+  const runtime = await createSceneImageNativeRuntime(process.env.DSH_BOOT_MODULE, { unifiedPlugin: true })
+  t.after(() => runtime.dispose())
+  runtime.chat.settleStatus = 'done'
+  runtime.chat.characterDesignDocument = { revision: 1, characters: [{ name: '林岚', design: { appearance: '成年女性，黑色短发' } }] }
+  runtime.lookupCharacterDesigns('林岚')
+  const before = sessionEvents(runtime.parent.agent.session).length
+  await runtime.service.configure({ confirmCharacters: true })
+  const target = await runtime.service.status('scene-parent', 1)
+  const address = { sessionId: 'scene-parent', turn: 1, key: target.key }
+  async function wait(check) { for (let n = 0; n < 600; n++) { const result = await check(); if (result) return result; await new Promise(resolve => setTimeout(resolve, 30)) } assert.fail('review timed out') }
+  await runtime.service.start('scene-parent', 1, target.key)
+  await wait(async () => (await runtime.service.status('scene-parent', 1)).status === 'awaiting-characters')
+  assert.equal(runtime.imageRequests.length, 0)
+  let person = (await runtime.service.looks('scene-parent', 1, target.key)).people[0]
+  await runtime.service.changeLook({ ...address, personId: person.id, revision: person.revision, action: 'discuss', requestId: 'native-look-discuss', message: '换成银色短发' })
+  await wait(async () => !(await runtime.service.looks('scene-parent', 1, target.key)).people[0].busy)
+  person = (await runtime.service.looks('scene-parent', 1, target.key)).people[0]
+  assert.equal(person.revision, 2, person.error)
+  assert.ok(person.agentSessionId)
+  assert.notEqual(person.agentSessionId, (await runtime.service.status('scene-parent', 1)).traceSessionId)
+  await runtime.service.changeLook({ ...address, personId: person.id, revision: 2, action: 'portrait', requestId: 'native-look-portrait' })
+  await wait(async () => !(await runtime.service.looks('scene-parent', 1, target.key)).people[0].busy)
+  let view = await runtime.service.looks('scene-parent', 1, target.key)
+  assert.ok(view.people[0].candidate, view.people[0].error)
+  const picture = await runtime.service.readLookImage({ ...address, personId: person.id, candidateId: view.people[0].candidate.id })
+  assert.equal(picture.ref.mediaType, 'image/png')
+  assert.ok(picture.data.length)
+  await runtime.service.changeLook({ ...address, personId: person.id, revision: 2, action: 'confirm', requestId: 'native-look-confirm', candidateId: view.people[0].candidate.id, consent: view.capability.gateway })
+  await runtime.restart()
+  assert.equal((await runtime.service.looks('scene-parent', 1, target.key)).people[0].approved, true)
+  await runtime.service.start('scene-parent', 1, target.key, { requestId: 'native-look-resume' })
+  await wait(async () => (await runtime.service.status('scene-parent', 1)).status === 'succeeded')
+  assert.equal(runtime.imageRequests.length, 2)
+  assert.match(runtime.imageRequests[1].prompt, /short silver hair/)
+  assert.equal(sessionEvents(runtime.parent.agent.session).length, before)
+})
+
 test('统一设置 → 插件生成 → 真实 DSH 附件，关闭和重启不丢图或重复生成', { skip: !process.env.DSH_BOOT_MODULE }, async t => {
   const runtime = await createSceneImageNativeRuntime(process.env.DSH_BOOT_MODULE, { unifiedPlugin: true })
   t.after(() => runtime.dispose())

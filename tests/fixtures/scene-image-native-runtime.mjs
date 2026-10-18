@@ -49,10 +49,11 @@ export async function createSceneImageNativeRuntime(bootPath, { unifiedPlugin = 
       for (const tool of input.tools || []) assertImageToolSchema(tool)
       const currentMessages = input.messages.slice(Math.max(0, input.messages.findLastIndex(message => message.source?.kind === 'plugin')))
       const referenceResult = currentMessages.flatMap(message => message.content || []).find(block => block.type === 'tool-result' && block.toolCallId === 'reference-call')
-      const referenceTool = !referenceResult && (characterQuery
+      const reviewTool = input.tools?.find(item => item.name === 'submit_character_look')
+      const referenceTool = !reviewTool && !referenceResult && (characterQuery
         ? input.tools?.find(item => item.name === 'character_design_read')
         : referenceQuery && input.tools?.find(item => item.name === 'read_scene_reference'))
-      let tool = referenceTool || input.tools?.find(item => ['submit_scene_plan', 'submit_image_adjustment'].includes(item.name))
+      let tool = reviewTool || referenceTool || input.tools?.find(item => ['submit_scene_plan', 'submit_image_adjustment'].includes(item.name))
       const plan = { description: '窗边单幅画面', subjects: [], characters: [], continuity: 'uncertain', scene: { composition: { text: '窗边单幅画面', tags: 'A woman standing beside a rain-streaked window, left hand on the frame, quiet evening light.' } } }
       if (useVisualState && tool?.name === 'submit_scene_plan') {
         const material = currentMessages.flatMap(message => message.content || []).filter(block => block.type === 'text').flatMap(block => block.text.split('\n')).map(line => {
@@ -93,6 +94,7 @@ export async function createSceneImageNativeRuntime(bootPath, { unifiedPlugin = 
         ? { description: '仅这张胶片风格', patches: [], style: { text: '胶片', tags: 'film grain' } }
         : { description: '改为雨夜近景', patches: [{ owner: 'scene', field: 'composition', text: '雨夜近景', tags: 'rainy night, close-up at the window' }] }
       let args = referenceTool ? (characterQuery ? { name: characterQuery } : { query: referenceQuery }) : { update }
+      if (tool?.name === 'submit_character_look') args = { appearance: '成年女性，银色短发', tags: 'adult woman, short silver hair', reply: '发型已更新，请查看定妆图。' }
       let callId = referenceTool ? 'reference-call' : 'image-call'
       if (tool?.name === 'submit_scene_plan') {
         const done = new Set(currentMessages.flatMap(message => message.content || []).filter(block => block.type === 'tool-result').map(block => block.toolCallId))

@@ -2866,3 +2866,10 @@ details.dsh-tavern-recall-guide > summary .dsh-tavern-recall-guide-heading > spa
 .dsh-tavern-card-plugins ul { margin: 6px 0; padding-left: 18px; }
 .dsh-tavern-card-plugins li { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }
 .dsh-tavern-card-plugins small { opacity: .7; }
+.dsh-tavern-look-backdrop { position: fixed; inset: 0; z-index: 10000; background: #0007; display: flex; align-items: center; justify-content: center; padding: 16px; }
+.dsh-tavern-look-dialog { color: var(--dsw-alias-label-primary, #222); background: var(--dsw-specific-sidebar-fill, #fff); width: min(720px, 100%); max-height: 90vh; overflow: auto; padding: 24px; border-radius: 16px; box-shadow: 0 16px 60px #0003; font-size: 14px; text-align: left; }
+.dsh-tavern-look-heading { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+.dsh-tavern-look-person { border-top: 1px solid #8884; padding: 16px 0; }
+.dsh-tavern-look-description, .dsh-tavern-look-message { white-space: pre-wrap; overflow-wrap: anywhere; }
+.dsh-tavern-look-person textarea { width: 100%; box-sizing: border-box; margin: 12px 0; }
+.dsh-tavern-look-portrait { display: block; width: auto; max-width: 100%; max-height: 400px; margin: 12px auto; border-radius: 8px; }

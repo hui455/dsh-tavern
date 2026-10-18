@@ -120,6 +120,7 @@ export function createBackgroundAgentSessions(options, task) {
   }
 
   function residentKey(input) {
+    if (input.task === 'image' && input.imageConversationKey) return JSON.stringify([str(input.sessionId), 'image-look', str(input.imageConversationKey)])
     return JSON.stringify([str(input.sessionId), input.task === 'image' ? 'image' : 'background'])
   }
 
@@ -132,7 +133,7 @@ export function createBackgroundAgentSessions(options, task) {
 
   function descriptorFor(input, persistent) {
     if (input.task === 'image') return snapshotSubagentDescriptor({
-      mode: persistent ? 'continuable' : 'one-shot', provider: 'dsh-tavern-image', label: '场景生图',
+      mode: persistent ? 'continuable' : 'one-shot', provider: 'dsh-tavern-image', label: input.imageConversationKey ? '人物形象确认' : '场景生图',
       ...(persistent ? { agentProvider: input.selection.provider, agentModel: input.selection.model,
         persona: '维护本游戏的场景绘图方案，不续写故事、不修改变量。当前目标材料与保存的方案优先于旧任务。' } : {})
     })
