@@ -95,8 +95,11 @@ export function updateSceneDraft(draft, name, args) {
     for (const [field, value] of Object.entries(args.fields)) {
       if (Boolean(value.text.trim()) !== Boolean(value.tags.trim())) invalid(name + '.fields.' + field, 'text 和 tags 须同时为空或非空')
     }
+    const mergedFields = { ...previous?.fields, ...args.fields }
+    const expressions = { ...previous?.expressions, ...args.expressions }
+    for (const field of Object.keys(mergedFields)) delete expressions[field]
     next.characters = { ...next.characters, [args.id]: { ...previous, ...args,
-      fields: { ...previous?.fields, ...args.fields }, expressions: { ...previous?.expressions, ...args.expressions } } }
+      fields: mergedFields, expressions } }
   } else if (name === SCENE_LAYOUT_TOOL.name) {
     if (new Set(args.subjects).size !== args.subjects.length) invalid(name + '.subjects', '人物 id 不得重复')
     for (const [field, value] of Object.entries(args.scene)) {
@@ -111,8 +114,10 @@ export function assembleSceneDraft(draft) {
   if (!draft.layout) invalid('scene', '缺少场景草稿，请调用 submit_scene_layout')
   const { expressions: sceneExpressions = {}, ...layout } = draft.layout
   const characters = Object.values(draft.characters || {}).map(({ expressions, ...person }) => person)
-  const expressions = Object.values(draft.characters || {}).flatMap(person => Object.entries(person.expressions || {}).map(([field, tags]) => ({ owner: person.id, field, tags })))
-  expressions.push(...Object.entries(sceneExpressions).map(([field, tags]) => ({ owner: 'scene', field, tags })))
+  // A complete field already supplies its tags. Also normalize persisted drafts
+  // from older versions so a repaired fact cannot retain an empty stale override.
+  const expressions = Object.values(draft.characters || {}).flatMap(person => Object.entries(person.expressions || {}).filter(([field]) => !Object.hasOwn(person.fields || {}, field)).map(([field, tags]) => ({ owner: person.id, field, tags })))
+  expressions.push(...Object.entries(sceneExpressions).filter(([field]) => !Object.hasOwn(layout.scene || {}, field)).map(([field, tags]) => ({ owner: 'scene', field, tags })))
   return { ...structuredClone(layout), characters, expressions }
 }
 

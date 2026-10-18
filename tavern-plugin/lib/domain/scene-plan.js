@@ -173,7 +173,7 @@ export function createScenePlans({ store }) {
       assert(!expressionKeys.has(owner + '/' + item.field), path + '：expression 重复')
       expressionKeys.add(owner + '/' + item.field)
       const tags = text(item.tags, path + '.tags', 1200)
-      assert(Boolean(tags) === Boolean(value.text), path + '.tags：expression 不能省略非空事实或为已清除事实增加标签')
+      assert(Boolean(tags) === Boolean(value.text), path + '.tags (' + owner + '.' + item.field + ')：' + (value.text ? '已有非空事实，请提供非空标签；若要修改事实，请在 fields 中提交完整 text/tags' : '事实已清空，标签也必须为空'))
       if (!prepared.block(owner, item.field, value.text)) value.blockId = makeBlock(owner, item.field, value.text, tags)
     }
     // How each subject faces the camera in this one picture. Tags for parts the camera
