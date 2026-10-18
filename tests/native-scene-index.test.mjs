@@ -63,3 +63,13 @@ test('display diagnostics share exact explicit-turn coordinates without scanning
  await db.update(chat.id,c=>{c.messages=[{role:'user',text:'input'},{role:'assistant',text:'inferred',displayRuntime:{frames:[{dom:'first'}]}},{role:'assistant',turn:2,text:'explicit'}];return c})
  await check(2,false)
 })
+
+test('main-dialogue plan metadata is available through indexed scene reads',async t=>{
+ const {db,chat}=await fixture(t,4)
+ const plan={version:1,sourceDigest:'fixture',plans:[{description:'main plan'}]}
+ await db.update(chat.id,c=>{c.messages[3].foregroundScenePlan=plan;return c})
+ const full=await db.read(chat.id)
+ const selected=await db.readSceneImageState(chat.id,{turns:[4]})
+ assert.deepEqual(sceneTarget(selected,4).foregroundScenePlan,plan)
+ assert.deepEqual(sceneTarget(selected,4),sceneTarget(full,4))
+})

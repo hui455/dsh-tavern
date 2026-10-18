@@ -108,6 +108,8 @@ function harness(mode, options = {}) {
     },
     worldBookRecall: options.worldBookRecall,
     captureSceneWorldbook: options.captureSceneWorldbook,
+    sceneImageSettings: options.sceneImageSettings,
+    foregroundScenePlan: options.foregroundScenePlan,
     scripts,
     timeline,
     frameBuilder: createForegroundFrameBuilder(),
@@ -331,4 +333,17 @@ test('漏写的一轮可以按它自己的请求号补记进存档（#196 自愈
   assert.notEqual(adopted.duplicate, true)
   assert.deepEqual(run.chat().messages.map(message => message.text), ['推开窗', '雨水扑进房间。', '关上窗', '窗关上了。'])
   assert.equal(Number(run.chat().messages.at(-1).turn), 3)
+})
+
+test('foreground scene instruction and stored metadata do not enter the final story text', async () => {
+  const metadata = { version: 1, sourceDigest: 'fixture', plans: [] }
+  const run = harness('story', { sceneImageSettings: async () => ({ enabled: true, promptSource: 'main' }), foregroundScenePlan: async input => { assert.equal(input.sourceText, '雨水敲窗。'); assert.ok(input.operationId); return metadata } })
+  const prepared = await run.orchestrator.prepare({ sessionId: 'session-1', turn: 2, userText: '继续' })
+  assert.match(foregroundFrameText(prepared.frame), /tavern_submit_scene_images/)
+  assert.ok((await run.orchestrator.visibleTools('session-1')).includes('tavern_submit_scene_images'))
+  await run.orchestrator.finalize({ sessionId: 'session-1', turn: 2, userText: '继续', assistantText: '雨水敲窗。' })
+  const message = run.chat().messages.at(-1)
+  assert.equal(message.sourceText, '雨水敲窗。')
+  assert.deepEqual(message.foregroundScenePlan, metadata)
+  assert.ok(!(await harness('card', { sceneImageSettings: async () => ({ enabled: true, promptSource: 'main' }) }).orchestrator.visibleTools('session-1')).includes('tavern_submit_scene_images'))
 })

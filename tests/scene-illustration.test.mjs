@@ -658,3 +658,35 @@ test('manual extra image viewpoint reaches planner and overrides its camera choi
   assert.match(requests[1].prompt, /omniscient/)
   await assert.rejects(fx.service.start('parent', 2, key, { kind: 'add', viewpoint: 'invalid' }), /视角/)
 })
+
+for (const invalid of [false, true]) test('main-dialogue stored plans bypass image Agent, stale plans fall back: ' + invalid, async t => {
+  let modelCalls = 0
+  const fx = await fixture(t, { runAgent: async input => { modelCalls++; await submitPlanCall(input, { arguments: { plan: planFixture() } }) } })
+  const source = fx.chat().messages[1].swipes[0]
+  fx.chat().messages[1].foregroundScenePlan = { version: 1, sourceDigest: createHash('sha256').update(invalid ? 'old body' : source).digest('hex'), plans: [{ ...planFixture('main dialogue scene tags'), anchor: source, viewpoint: 'first-person', aspectRatio: '3:4' }] }
+  await fx.service.configure({ promptSource: 'main' })
+  assert.equal((await fx.service.settings()).promptSource, 'main')
+  const key = sceneTarget(fx.chat(), 2).key
+  await fx.service.start('parent', 2, key)
+  const done = await until(async () => { const s = await fx.service.status('parent', 2); return s.status === 'succeeded' && s })
+  assert.equal(modelCalls, invalid ? 1 : 0)
+  assert.equal(done.planSource, invalid ? 'independent' : 'main')
+  assert.equal(fx.imageCalls(), 1)
+})
+
+test('all stored main-dialogue scenes generate without repeated scene planning', async t => {
+  let modelCalls = 0
+  const fx = await fixture(t, { runAgent: async () => { modelCalls++; throw Error('unexpected independent planner') } })
+  const source = '她站在窗边。她走到花园。'
+  Object.assign(fx.chat().messages[1], { sourceText: source, swipes: [source], foregroundScenePlan: {
+    version: 1, sourceDigest: createHash('sha256').update(source).digest('hex'), plans: [
+      { ...planFixture('window view'), anchor: '她站在窗边。', viewpoint: 'first-person' },
+      { ...planFixture('garden view'), anchor: '她走到花园。', viewpoint: 'omniscient' }
+    ]
+  } })
+  await fx.service.configure({ promptSource: 'main' })
+  await fx.service.start('parent', 2, sceneTarget(fx.chat(), 2).key)
+  const done = await until(async () => { const s = await fx.service.status('parent', 2); return !s.sequenceRunning && s.extras[0]?.status === 'succeeded' && s })
+  assert.equal(modelCalls, 0); assert.equal(fx.imageCalls(), 2)
+  assert.equal(done.extras[0].planSource, 'main')
+})

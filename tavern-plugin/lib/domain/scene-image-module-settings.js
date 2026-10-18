@@ -43,7 +43,7 @@ export function createModuleSceneImageSettings({ store, credentials, imageModule
     const migration = Boolean(legacy && current.provider !== 'dsh-image-gen')
     const value = migration ? { ...current, ...channelSettings(legacy, current.provider), migrationPending: true } : current
     const oldKey = resolveKey && migration && channelNeedsKey(value) ? await credentials()?.resolve(imageCredentialRef(value.provider, value.authType)) : undefined
-    return { ...value, enabled: doc.enabled, auto: doc.auto === true, nsfw: doc.nsfw === true, confirmCharacters: doc.confirmCharacters === true,
+    return { ...value, enabled: doc.enabled, auto: doc.auto === true, nsfw: doc.nsfw === true, promptSource: doc.promptSource || 'independent', confirmCharacters: doc.confirmCharacters === true,
       ready: !migration && current.ready, hasKey: migration ? Boolean(oldKey?.value) : current.hasKey,
       style: doc.style, stylePresets: SCENE_STYLE_PRESETS, activeProvider: doc.provider === 'dsh-image-gen' ? current.provider : doc.provider }
   }
@@ -61,11 +61,12 @@ export function createModuleSceneImageSettings({ store, credentials, imageModule
       const current = await read()
       if (current.migrationPending) throw new Error('请先保存并迁移旧生图配置')
       const snapshot = await service().capture(current.provider)
-      return { active: { ...snapshot.active, enabled: current.enabled, nsfw: current.nsfw, style: current.style, confirmCharacters: current.confirmCharacters }, apiKey: snapshot.apiKey }
+      return { active: { ...snapshot.active, enabled: current.enabled, nsfw: current.nsfw, promptSource: current.promptSource, style: current.style, confirmCharacters: current.confirmCharacters }, apiKey: snapshot.apiKey }
     }),
     configure: (input = {}) => serial(async () => {
       if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('生图配置必须是对象')
       if (input.enabled !== undefined && typeof input.enabled !== 'boolean') throw new Error('启用状态必须为布尔值')
+      if (input.promptSource !== undefined && !['independent', 'main'].includes(input.promptSource)) throw new Error('请选择有效的配图提示词来源')
       if (input.nsfw !== undefined && typeof input.nsfw !== 'boolean') throw new Error('NSFW 开关必须为布尔值')
       if (input.auto !== undefined && typeof input.auto !== 'boolean') throw new Error('自动生图开关必须为布尔值')
       if (input.confirmCharacters !== undefined && typeof input.confirmCharacters !== 'boolean') throw new Error('人物形象确认开关必须为布尔值')
@@ -73,7 +74,7 @@ export function createModuleSceneImageSettings({ store, credentials, imageModule
       const current = await read(input.provider)
       const id = current.provider
       const changesProvider = id !== (doc.provider === 'dsh-image-gen' ? current.activeProvider : doc.provider)
-      const edits = Object.keys(input).some(key => !['provider', 'enabled', 'auto', 'nsfw', 'confirmCharacters'].includes(key))
+      const edits = Object.keys(input).some(key => !['provider', 'enabled', 'auto', 'nsfw', 'promptSource', 'confirmCharacters'].includes(key))
       if (input.enabled === true && (changesProvider || edits || !current.ready)) throw new Error('请先保存完整生图配置（渠道、模型和 API Key），再开启场景生图')
       let next = current
       if (edits) {
@@ -105,7 +106,7 @@ export function createModuleSceneImageSettings({ store, credentials, imageModule
         if (!next.migrationPending) { delete providers[id]; if (latest.provider === 'dsh-image-gen') delete providers['dsh-image-gen'] }
         return { ...latest, version: 4, provider: id, providers, style: doc.style,
           // A switch left on cannot outlive the configuration it was turned on for.
-          enabled: (input.enabled ?? doc.enabled) && Boolean(next.ready), auto: (input.auto ?? doc.auto) === true, nsfw: (input.nsfw ?? doc.nsfw) === true,
+          enabled: (input.enabled ?? doc.enabled) && Boolean(next.ready), auto: (input.auto ?? doc.auto) === true, nsfw: (input.nsfw ?? doc.nsfw) === true, promptSource: input.promptSource ?? doc.promptSource ?? 'independent',
           confirmCharacters: (input.confirmCharacters ?? doc.confirmCharacters) === true }
       })
       return read()

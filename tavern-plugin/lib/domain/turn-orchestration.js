@@ -1,3 +1,4 @@
+import { FOREGROUND_SCENE_TOOL, foregroundSceneInstructions, foregroundScenesEnabled } from './foreground-scene-plans.js'
 import { captureChatHeader } from './chat-persistence.js'
 import { validAnchor } from './round-anchor.js'
 import { CARD_MEMORY_TOOLS } from '../../packages/dsh-tavern-card-memory/index.js'
@@ -456,6 +457,8 @@ export function createTurnOrchestrator(options) {
           : resolveRuntimePresetMacros(chat.runtimePresetSnapshot, { charName: card.name, macroState: chat.macroState }).snapshot, chat, pluginSections),
       source: { ...source, ...(sceneWorldbook ? { sceneWorldbook } : {}) }
     }
+    const imageInstruction = foregroundSceneInstructions(await options.sceneImageSettings?.())
+    if (imageInstruction) frameInput.inputs.push({ kind: 'foreground.writing-rules', text: imageInstruction, required: true, source: { stage: 'scene-images', kind: 'foreground-image-plan' } })
     let frame = frameBuilder.build(frameInput)
     if (foregroundWorldBook?.log && typeof options.recordWorldbookRecall === 'function') {
       let receipt
@@ -786,6 +789,8 @@ export function createTurnOrchestrator(options) {
       playScript = await store.readScript(cardPathOf(chat))
       if (playScript === undefined || !Array.isArray(playScript.chunks) || playScript.chunks.length === 0) throw new Error('剧本文件不存在，请重新为人物卡导入剧本')
     }
+    let foregroundScenePlan
+    try { foregroundScenePlan = await options.foregroundScenePlan?.({ sessionId: input.sessionId, turn, operationId: operation.id, sourceText: usesOfficialMvu(chat) ? str(reply.projectionText) : str(reply.sourceText) }) } catch { /* Optional artwork never blocks story persistence. */ }
     const completed = timeline.complete({
       chat,
       operationId: operation.id,
@@ -807,6 +812,7 @@ export function createTurnOrchestrator(options) {
         delete draft.promptTemplateInput
         const assistantMessage = {
           role: 'assistant',
+          ...(foregroundScenePlan ? { foregroundScenePlan } : {}),
           text: assistantText,
           sourceText: str(reply.sourceText),
           projectionText: str(reply.projectionText),
@@ -910,10 +916,11 @@ export function createTurnOrchestrator(options) {
     if (chat === undefined) return []
     const mode = chat.mode || 'story'
     const webTools = chat.webSearchEnabled === true ? ['web_search'] : []
+    const imageTools = foregroundScenesEnabled(await options.sceneImageSettings?.()) ? [FOREGROUND_SCENE_TOOL] : []
     const storyTools = storyToolCallEnabled(chat, await options.storyToolCall?.()) ? [STORY_SUBMIT_TOOL_NAME] : []
-    if (mode === 'script') return ['tavern_read_variables', 'skill', 'tavern_read_skill_reference', 'tavern_read_script', 'tavern_recall_history', 'worldbook_search', ...webTools, ...storyTools]
+    if (mode === 'script') return ['tavern_read_variables', 'skill', 'tavern_read_skill_reference', 'tavern_read_script', 'tavern_recall_history', 'worldbook_search', ...webTools, ...storyTools, ...imageTools]
     if (mode === 'card') return [...CARD_MEMORY_TOOLS, 'web_search', shellToolName, ...dshFileToolNames, 'skill', 'tavern_read_skill_reference', 'tavern_save_skill', ...cordisToolNames, 'tavern_character_reference', 'tavern_user_profile_read', 'tavern_user_profile_save', 'tavern_read_card', 'tavern_read_card_raw', 'tavern_search_card', 'tavern_replace_card_text', 'tavern_mvu_overview', 'tavern_apply_mvu', 'tavern_read_play_chat', 'tavern_read_worldbook', 'tavern_update_worldbook', 'tavern_read_preset', 'tavern_update_preset', 'tavern_read_regex_library', 'tavern_copy_card', 'tavern_update_card', 'tavern_restore_card', 'tavern_validate_card', 'tavern_test_response']
-    return ['tavern_read_variables', 'skill', 'tavern_read_skill_reference', 'tavern_recall_history', 'worldbook_search', ...webTools, ...storyTools]
+    return ['tavern_read_variables', 'skill', 'tavern_read_skill_reference', 'tavern_recall_history', 'worldbook_search', ...webTools, ...storyTools, ...imageTools]
   }
 
   async function modeFor(sessionId) {
