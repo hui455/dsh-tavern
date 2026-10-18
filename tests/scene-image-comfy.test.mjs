@@ -8,6 +8,25 @@ import { comfyGraph, comfyLinkedSeedGraph } from './fixtures/scene-image-comfy-w
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aKfoAAAAASUVORK5CYII=', 'base64')
 const input = () => ({ provider: 'comfyui', baseURL: 'http://localhost:8188/prefix', workflow: comfyGraph(), prompt: 'rainy window' })
 
+test('Impact wildcard API selectors survive import without allowing secrets or nested unsafe keys', () => {
+  const workflow = comfyWorkflow(comfyGraph())
+  workflow.prompt['3'].class_type = 'ImpactWildcardEncode'
+  workflow.prompt['3'].inputs['Select to add LoRA'] = 'Select the LoRA to add to the text'
+  workflow.prompt['3'].inputs['Select to add Wildcard'] = 'Select the Wildcard to add to the text'
+  const imported = comfyWorkflow(workflow)
+  assert.equal(compileComfyWorkflow(imported, 'scene').prompt['3'].inputs['Select to add LoRA'], 'Select the LoRA to add to the text')
+  for (const key of ['token', 'password', 'api_key', 'authorization', '__proto__', 'constructor', 'prototype']) {
+    const copy = structuredClone(workflow)
+    Object.defineProperty(copy.prompt['3'].inputs, key, { value: 'PRIVATE_SENTINEL', enumerable: true })
+    assert.throws(() => comfyWorkflow(copy), error => /危险字段/.test(error.message) && !error.message.includes('PRIVATE_SENTINEL'))
+  }
+  const nested = structuredClone(workflow)
+  nested.prompt['3'].inputs.nested = { 'Select to add LoRA': 'x' }
+  assert.throws(() => comfyWorkflow(nested), /危险字段/)
+  workflow.prompt['3'].class_type = 'OtherNode'
+  assert.throws(() => comfyWorkflow(workflow), /危险字段/)
+})
+
 test('ComfyUI mapping errors identify missing fields, types, unsafe integers and duplicates without leaking values', () => {
   for (const [value, expected] of [['PRIVATE_SENTINEL', /节点 8.*seed.*安全整数/], [2 ** 53, /节点 8.*seed.*安全整数/], [1.5, /节点 8.*seed.*安全整数/]]) {
     const graph = comfyLinkedSeedGraph(); graph['8'].inputs.seed = value

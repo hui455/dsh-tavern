@@ -2,6 +2,9 @@ import { createHash, randomInt } from 'node:crypto'
 
 const object = value => value && typeof value === 'object' && !Array.isArray(value)
 const safeKey = value => typeof value === 'string' && /^[\w.:-]{1,120}$/.test(value) && !['__proto__', 'constructor', 'prototype'].includes(value)
+// Impact Pack declares these UI selectors as required API inputs. Keep the
+// exception scoped to that node's top-level inputs, not arbitrary JSON keys.
+const impactSelector = (type, key) => type === 'ImpactWildcardEncode' && ['Select to add LoRA', 'Select to add Wildcard'].includes(key)
 const fail = message => { throw new Error('ComfyUI 工作流：' + message) }
 const hash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex')
 
@@ -29,19 +32,19 @@ export function comfyWorkflow(value) {
   const entries = Object.entries(graph)
   if (!entries.length || entries.length > 200) fail('节点数须为 1–200')
   const prompt = Object.create(null)
-  function check(value, depth = 0) {
+  function check(value, depth = 0, nodeType = '') {
     if (depth > 16) fail('嵌套过深')
     if (Array.isArray(value)) { for (const item of value) check(item, depth + 1); return }
     if (object(value)) {
       for (const [key, item] of Object.entries(value)) {
-        if (!safeKey(key) || /^(?:api_?key|token|password|secret|authorization)$/i.test(key)) fail('不能在工作流中保存凭据或危险字段；请由服务器配置认证')
+        if ((!safeKey(key) && !(depth === 0 && impactSelector(nodeType, key))) || /^(?:api_?key|token|password|secret|authorization)$/i.test(key)) fail('不能在工作流中保存凭据或危险字段；请由服务器配置认证')
         check(item, depth + 1)
       }
     } else if (!['string', 'number', 'boolean'].includes(typeof value) && value !== null) fail('参数须为 JSON 值')
   }
   for (const [id, node] of entries) {
     if (!safeKey(id) || !object(node) || typeof node.class_type !== 'string' || !node.class_type || node.class_type.length > 200 || !object(node.inputs)) fail('节点结构无效')
-    check(node.inputs)
+    check(node.inputs, 0, node.class_type)
     prompt[id] = { class_type: node.class_type, inputs: structuredClone(node.inputs) }
   }
   let outputNode = wrapped ? value.outputNode : undefined
