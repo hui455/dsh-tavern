@@ -32,6 +32,7 @@
 			const organization = useCardOrganization(cards, busy, refresh, error => setError(error), cardBatch);
 			const [error, setError] = usePersistentError("左侧栏操作");
 			const [uiMode, setUiMode] = React.useState("play");
+            const [historySearch, setHistorySearch] = React.useState("");
 			const [requestMode, setRequestMode] = React.useState("dsh");
 			const compatibilityAvailable = false;
 			const [trustedCardMode, setTrustedCardMode] = React.useState(true);
@@ -232,7 +233,7 @@
 							const completedInThisPage = status.phase === "completed" && updateStartedAtRef.current > 0 && Number(status.completedAt || 0) >= updateStartedAtRef.current;
 							const next = status.phase === "completed" && !completedInThisPage ? { ...status, phase: "idle", host: status.host || "cli" } : status;
 							// Ignore reads begun before an update action, even if they finish afterward.
-							publishUpdateStatus(next);
+							publishUpdateStatus({ ...next, phase: "idle" });
 						}
 					} catch (err) {
 							if (stopped || generation !== updateActionRef.current.generation || updateActionRef.current.pending) return;
@@ -248,8 +249,8 @@
 						} finally { pending = false; }
 				}
 				refreshUpdateStatus();
-				const timer = window.setInterval(refreshUpdateStatus, 2500);
-				return function () { stopped = true; window.clearInterval(timer); };
+				// This fork only reads the local build identity once; upstream update UI is disabled.
+				return function () { stopped = true; };
 			}, []);
 			React.useEffect(function () {
 				if (updateStatus.phase !== "running" || updateStatus.host === "desktop") return;
@@ -886,6 +887,9 @@
 			const visibleHistory = history.filter(function (item) {
 				if (groupOfMode(item.mode) !== uiMode) return false;
 				if (uiMode !== "play") return true;
+                const terms = historySearch.normalize('NFKC').toLocaleLowerCase().trim().split(/\s+/).filter(Boolean);
+                const haystack = [item.title, item.cardName, summaries[item.sessionId]?.displayTitle].filter(Boolean).join(' ').normalize('NFKC').toLocaleLowerCase();
+                if (!terms.every(term => haystack.includes(term))) return false;
 				return (item.requestMode === "sillytavern" ? "sillytavern" : "dsh") === requestMode;
 			});
 			// Deleting a card elsewhere may remove the chat open here; never leave it on screen.
@@ -920,7 +924,7 @@
 				);
 			}
 			const rows = uiMode !== "play" ? visibleHistory.map(renderHistoryRow) : groupTavernHistory(visibleHistory, summaries).map(function (group) {
-				const expanded = historyGroupState[group.key] === true;
+				const expanded = Boolean(historySearch.trim()) || historyGroupState[group.key] === true;
 				return h("section", { key: group.key, className: "dsh-tavern-history-group" },
 					h("button", { className: "dsh-tavern-history-group-toggle", "aria-expanded": expanded, title: group.path || group.name,
 						onClick: function () { setHistoryGroupState(previous => ({ ...previous, [group.key]: !expanded })); setMenuSession(null); }
@@ -1106,17 +1110,7 @@
 			const updateHostLabel = updateStatus.phase === "package-managed" ? "插件安装版" : updateStatus.host === "desktop" ? "Desktop 版" : (updateStatus.host === "android" ? "Android 版" : "命令行版");
 			const checkingOrRunning = isUpdateBusy(updateStatus);
 			const cancelSupported = ["running", "cancelling"].includes(updateStatus.phase) && updateStatus.cancellable === true;
-			const updateActions = updateStatus.phase === "package-managed"
-				? h("details", { className: "dsh-tavern-update-actions" },
-					h("summary", { className: "dsh-tavern-update-button" }, "查看更新命令"),
-					h("code", { style: { display: "block", overflowWrap: "anywhere", userSelect: "text" } }, updateStatus.updateCommand))
-				: updateStatus.phase === "update-available" || updateStatus.phase === "repair-required"
-				? h("div", { className: "dsh-tavern-update-actions" },
-					h("button", { className: "dsh-tavern-update-button", onClick: checkUpdate }, "检查更新"),
-					h("button", { className: "dsh-tavern-update-button primary", onClick: performUpdate }, updateStatus.phase === "repair-required" ? "修复安装" : "进行更新"))
-				: h("div", { className: "dsh-tavern-update-actions" },
-					h("button", { className: "dsh-tavern-update-button", disabled: checkingOrRunning || updateStatus.phase === "restart-required" || updateStatus.phase === "installed-restart-required", onClick: checkUpdate }, updateStatus.phase === "checking" ? "正在检查…" : (updateStatus.phase === "running" ? "正在更新…" : (updateStatus.phase === "cancelling" ? "正在取消…" : (updateStatus.phase === "blocked" ? "等待安全停止" : (updateStatus.phase === "installed-restart-required" ? "请手动重启" : (updateStatus.phase === "restart-required" ? "重启 Desktop 后可用" : "检查更新")))))),
-					cancelSupported ? h("button", { className: "dsh-tavern-update-button", disabled: updateStatus.phase === "cancelling", onClick: cancelUpdate }, updateStatus.phase === "cancelling" ? "正在取消…" : "取消更新") : null);
+
 			return h(React.Fragment, null, h(TavernErrorCenter), collapsedSidebar, h("div", { className: "dsh-tavern-sidebar", style: { display: collapsed ? "none" : undefined, position: "relative", width: props.embedded ? "100%" : props.width + "px" } },
 				h("div", { className: "dsh-tavern-side-head" }, h("div", { className: "dsh-tavern-side-brand dsh-tavern-lockup", role: "img", "aria-label": "DSH Tavern" }), props.embedded ? null : h("button", { className: "dsh-tavern-side-icon", title: "收起侧栏", onClick: props.toggleSidebar }, "◧")),
 				h("div", { className: "dsh-tavern-mode-switch" + (compatibilityAvailable ? " compatibility-enabled" : "") },
@@ -1131,19 +1125,20 @@
 				h("div", { className: "dsh-tavern-side-title dsh-tavern-history-heading" },
 					h("span", null, uiMode === "play" ? (requestMode === "sillytavern" ? "silly 对话" : "游玩历史") : "卡片历史"),
 					h("button", { className: "dsh-tavern-history-action", disabled: busy, onClick: function () { setManaging(!managing); setSelectedChats([]); setMenuSession(null); setDeleteNotice(""); } }, managing ? "取消" : "管理")),
+                uiMode === "play" ? h("div", { style: { display: "flex", gap: "4px", padding: "4px 12px 8px" } },
+                    h("input", { type: "search", "aria-label": "搜索游玩历史", placeholder: "搜索对话标题或人物卡", value: historySearch, style: { minWidth: 0, flex: 1 }, onChange: function (event) { setHistorySearch(event.target.value); setSelectedChats([]); } }),
+                    historySearch ? h("button", { className: "dsh-tavern-btn", "aria-label": "清除历史搜索", onClick: function () { setHistorySearch(""); } }, "清除") : null) : null,
 				managing ? h("div", { className: "dsh-tavern-history-selection" },
 					h("button", { className: "dsh-tavern-history-action", disabled: busy || !visibleHistory.length, onClick: function () { setSelectedChats(visibleHistory.map(function (item) { return item.chatId; })); } }, "全选"),
 					h("span", null, "已选 " + visibleHistory.filter(function (item) { return selectedChats.includes(item.chatId); }).length)) : null,
-				h("div", { className: "dsh-tavern-side-list" }, rows.length ? rows : h("div", { className: "dsh-tavern-side-empty" }, uiMode === "play" ? (requestMode === "sillytavern" ? "还没有silly 对话。\n选择人物卡开始；未选择外部预设时自动使用内置纯净预设。" : "还没有游玩对话。\n选择人物卡开始；绑定剧本的卡会按剧本推进。") : "还没有卡片工作台对话。\n可以空白开始，再按需添加人物卡和剧本。")),
+				h("div", { className: "dsh-tavern-side-list" }, rows.length ? rows : h("div", { className: "dsh-tavern-side-empty" }, uiMode === "play" && historySearch.trim() ? "没有匹配的游玩历史" : uiMode === "play" ? (requestMode === "sillytavern" ? "还没有silly 对话。\n选择人物卡开始；未选择外部预设时自动使用内置纯净预设。" : "还没有游玩对话。\n选择人物卡开始；绑定剧本的卡会按剧本推进。") : "还没有卡片工作台对话。\n可以空白开始，再按需添加人物卡和剧本。")),
 				managing ? h("button", { className: "dsh-tavern-btn", style: { flexShrink: 0, margin: "8px 12px", color: "#e57373" }, disabled: busy || !visibleHistory.some(function (item) { return selectedChats.includes(item.chatId); }), onClick: deleteSelectedConversations }, busy ? "正在删除…" : "删除所选（" + visibleHistory.filter(function (item) { return selectedChats.includes(item.chatId); }).length + "）") : null,
 				deleteNotice ? h("div", { role: "status", style: { padding: "4px 12px" } }, deleteNotice) : null,
 				!picking && error ? h("div", { className: "dsh-tavern-dock-error", role: "alert" }, error) : null,
 				h("div", { className: "dsh-tavern-update" },
 					h("div", { className: "dsh-tavern-update-row" },
-						h("div", { className: "dsh-tavern-update-identity", title: "DSH Tavern " + currentVersionLabel + " · " + currentCommitLabel + " · " + updateHostLabel }, "DSH Tavern " + currentVersionLabel + " · " + currentCommitLabel),
-						updateActions),
-                    h(TavernHostCompatibility),
-					updateStatus.phase === "idle" || updateStatus.phase === "loading" ? null : h("div", { className: "dsh-tavern-update-status" + (updateStatus.phase === "failed" || updateStatus.phase === "check-failed" || updateStatus.phase === "blocked" || updateStatus.stalled ? " error" : "") }, updateMessage)
+						h("div", { className: "dsh-tavern-update-identity", title: "DSH Tavern " + currentVersionLabel + " · " + currentCommitLabel + " · " + updateHostLabel }, "DSH Tavern " + currentVersionLabel + " · " + currentCommitLabel)),
+                    h(TavernHostCompatibility)
 				),
 				(openingPicker || (picking && uiMode === "play")) ? h("div", { key: "play-picker", className: "dsh-tavern-picker-overlay", style: { display: picking && uiMode === "play" ? undefined : "none" }, onMouseDown: function (event) { if (event.target === event.currentTarget) closePicker(); } }, playPicker) : null,
                 picking && uiMode === "card" ? h("div", { key: "card-picker", className: "dsh-tavern-picker-overlay", onMouseDown: function (event) { if (event.target === event.currentTarget) closePicker(); } }, cardPicker) : null
