@@ -424,7 +424,7 @@ export function createSceneIllustrations(deps) {
         const snapshot = sceneInput(chat, target, historical)
         const basic = sceneSources(chat, target, snapshot)
         prepared = await plans.prepare({ chatId: chat.id, target, ...basic, profile, autoStyle: styleWrittenByAgent(active.style), stylePreference: active.style?.custom?.trim() || '', replan: kind === 'replan' })
-        if (active.confirmCharacters) {
+        {
           const knownLooks = await characterLooks.list(chat.id, Object.keys(prepared.people || {}), active)
           prepared.input.confirmedLooks = knownLooks.people.filter(person => person.approved).map(person => ({ id: person.id, name: person.name, appearance: person.confirmed.appearance, tags: person.confirmed.tags }))
         }
@@ -507,23 +507,9 @@ export function createSceneIllustrations(deps) {
     }
     async function deliverImage() {
       controller.signal.throwIfAborted()
-      let lookReferences
-      if (active.confirmCharacters) {
-        await characterLooks.ensure(input.chatId, plan)
-        lookReferences = await characterLooks.apply(input.chatId, plan, active)
-        if (lookReferences.pending.length) {
-          record.status = 'awaiting-characters'
-          record.stage = 'awaiting-characters'
-          record.outcome = 'not_requested'
-          record.pendingCharacters = lookReferences.pending
-          record.plan = plan
-          record.requests[record.requestId] = { status: record.status, outcome: record.outcome }
-          await writeJob(path, record)
-          return false
-        }
-        plan = lookReferences.plan
-        delete record.pendingCharacters
-      }
+      const lookReferences = await characterLooks.apply(input.chatId, plan, active)
+      plan = lookReferences.plan
+      delete record.pendingCharacters
       plan = applyImageStyle(plan, await input.styleOf(plan))
       const prompt = composeSceneImagePrompt(plan)
       record.planId = plan.id
@@ -540,15 +526,17 @@ export function createSceneIllustrations(deps) {
         timer = setTimeout(() => controller.abort(), deps.timeoutMs || 300000)
         if (lookReferences) {
           const latest = await characterLooks.apply(input.chatId, plan, active)
-          if (latest.pending.length || latest.approvalToken !== lookReferences.approvalToken) throw new Error('排队期间人物形象已变化，请重新确认后再配图；尚未请求图片')
+          if (latest.approvalToken !== lookReferences.approvalToken) throw new Error('排队期间人物参考已变化，请重试配图；尚未请求图片')
         }
         const reference = await imageReferences.load({ selected: input.selectedImageReferences, plan,
           readImage: attachment => deps.attachments().readImage(attachment),
           readVersion: async source => versionsOf(await deps.store.readJson(pathFor(input.chatId, source.key))).find(version => version.id === source.versionId) })
         if (lookReferences) {
-          // Confirmed character portraits own identity when the review flow is on.
-          reference.images = lookReferences.images
-          reference.warnings = lookReferences.warnings
+          // Prefer explicit portraits, retaining ordinary manually-bound references
+          // for other subjects. Missing portraits must not erase existing images.
+          const lookIds = new Set(lookReferences.images.map(image => image.personId))
+          reference.images = [...lookReferences.images, ...reference.images.filter(image => !lookIds.has(image.personId))].slice(0, input.selectedImageReferences.capability.maxImages)
+          reference.warnings = [...new Set([...reference.warnings, ...lookReferences.warnings])]
         }
         record.referenceImages = reference.images.map(image => image.reference)
         record.referenceWarning = reference.warnings.join(' ')
@@ -578,8 +566,7 @@ export function createSceneIllustrations(deps) {
       // One paid attempt per user action. Repeated tool calls reuse the receipt.
       delivery ||= (async () => {
         try {
-          if (await deliverImage() === false) return JSON.stringify({ ok: true, status: 'awaiting-characters',
-            message: '发现尚未确认形象的人物，已暂停剧情配图。请用户在人物形象对话中生成并确认定妆图；尚未请求剧情图片，不要声称完成或再次提交。' })
+          await deliverImage()
           return JSON.stringify({ ok: true, status: 'succeeded', versionId: record.requestId,
             message: '方案已校验保存，图片已生成并保存。请简短告知用户完成，不要再次调用生图工具。' })
         } catch (error) {

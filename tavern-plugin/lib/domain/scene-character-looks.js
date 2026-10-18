@@ -143,7 +143,9 @@ export function createSceneCharacterLooks({ store, runAgent, selection, generate
     const images = [], warnings = [], pending = [], approvals = []
     for (const id of plan.subjects || []) {
       const person = document.people[hash(id)], approved = person?.confirmed
-      if (!approved || approved.revision !== person.revision || approved.candidate.id !== person.candidate?.id || jobs.has(person.operation?.id)) { pending.push(id); continue }
+      // Optional references never block ordinary scene generation. An absent,
+      // outdated or still-being-edited look leaves the scene's own facts intact.
+      if (!approved || approved.revision !== person.revision || approved.candidate.id !== person.candidate?.id || jobs.has(person.operation?.id)) continue
       approvals.push({ personId: id, revision: approved.revision, candidateId: approved.candidate.id, gateway: approved.gateway })
       const block = plan.blocks?.find(b => b.owner === id && b.field === 'appearance')
       if (block) { block.text = approved.appearance; block.tags = approved.tags }
@@ -161,8 +163,7 @@ export function createSceneCharacterLooks({ store, runAgent, selection, generate
       images.push({ personId: id, name: person.name, description: approved.appearance, data: Buffer.from(image.data), mediaType,
         reference: { kind: 'confirmed-character-look', personId: id, revision: approved.revision, candidateId: approved.candidate.id } })
     }
-    if (pending.length) return { pending, plan, images: [], warnings }
-    if (plan.subjects?.length) {
+    if (approvals.length && plan.subjects?.length) {
       const scene = field => plan.blocks?.find(b => b.owner === 'scene' && b.field === field)?.tags
       plan.prompt = [scene('composition'), ...plan.subjects.map(id => {
         const person = plan.people.find(p => p.id === id)

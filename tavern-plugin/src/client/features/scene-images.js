@@ -54,12 +54,7 @@
 			const [busy, setBusy] = React.useState(false);
 			const requestRef = React.useRef(null);
 			const state = useSceneImageRecord(props.sessionId, props.turn);
-			const [lookOpen, setLookOpen] = React.useState(false);
-			const openedLook = React.useRef("");
 			const awaitingLook = state && [state].concat(state.extras || []).find(function (item) { return item.status === "awaiting-characters"; });
-			React.useEffect(function () {
-				if (awaitingLook && openedLook.current !== awaitingLook.requestId) { openedLook.current = awaitingLook.requestId; setLookOpen(true); }
-			}, [awaitingLook && awaitingLook.requestId]);
 			async function generate() {
 				const reusable = requestRef.current && !(state && requestRef.current.id === state.requestId && ["failed", "cancelled", "idle"].includes(state.status));
 				const clickId = reusable && state && requestRef.current.key === state.key ? requestRef.current.id : sceneImageRequestId();
@@ -74,9 +69,12 @@
 				catch (e) { tavernErrorHub.report("生图", e); }
 				finally { setBusy(false); window.dispatchEvent(new CustomEvent("dsh-tavern-image-changed", { detail: { sessionId: props.sessionId } })); }
 			}
-			if (awaitingLook) return React.createElement(React.Fragment, null,
-				React.createElement("button", { type: "button", className: "dsh-tavern-btn", onClick: function () { setLookOpen(true); } }, "确认新人物形象"),
-				lookOpen ? React.createElement(SceneCharacterConfirmation, { sessionId: props.sessionId, turn: props.turn, record: awaitingLook, onClose: function () { setLookOpen(false); } }) : null);
+			if (awaitingLook) return React.createElement("button", { type: "button", className: "dsh-tavern-btn", disabled: busy, onClick: async function () {
+				setBusy(true);
+				try { await rpc("generateSceneImage", { turn: props.turn, key: awaitingLook.key, kind: "generate", requestId: sceneImageRequestId() }, props.sessionId); }
+				catch (e) { tavernErrorHub.report("生图", e); }
+				finally { setBusy(false); window.dispatchEvent(new CustomEvent("dsh-tavern-image-changed", { detail: { sessionId: props.sessionId } })); }
+			} }, busy ? "继续生成中…" : "继续生成插图");
 			if (!state || !state.enabled || !state.key || state.status === "running" || state.recovery === "save" || state.versions && state.versions.length) return null;
 			const label = busy ? "正在整理画面…"
 				: state.outcome === "unconfirmed" ? (state.providerTask ? "查询原生图任务" : "重新生图")
@@ -405,9 +403,7 @@
 					h("span", null, "每轮自动生图", h("span", { className: "dsh-tavern-settings-desc" }, !form.enabled ? "需先开启场景生图。" : form.auto ? "每轮正文结算完成后自动画一张插图；每张都会产生生图费用和少量文字模型费用。生成失败或删掉的插图不会自动重画。" : "默认关闭：只在点击图标时生图。打开后每轮自动画一张，会持续产生费用。")),
 					h("input", { type: "checkbox", role: "switch", "aria-label": "每轮自动生图", checked: form.auto === true, disabled: busy || !form.enabled, onChange: function (e) { void save({ auto: e.target.checked }); } })),
 				h("h3", { className: "dsh-tavern-image-settings-title" }, "生图 API 配置（全局共用）"),
-				!form ? null : h("label", { className: "dsh-tavern-background-task" },
-					h("span", null, "新人物先确认形象", h("span", { className: "dsh-tavern-settings-desc" }, "首次配图前暂停，独立对话修改外貌并生成定妆图。确认后，支持参考图的渠道使用图片，其余使用外貌文字。")),
-					h("input", { type: "checkbox", role: "switch", "aria-label": "新人物先确认形象", checked: form.confirmCharacters === true, disabled: busy, onChange: function (e) { void save({ confirmCharacters: e.target.checked }); } })),
+				h("p", { className: "dsh-tavern-image-hint" }, "自动复用已有参考图或外貌文字；没有参考资料时按人物卡和当前剧情生成，不暂停确认。"),
 				h("div", { className: "dsh-tavern-image-settings" },
 					h("p", { className: "dsh-tavern-settings-intro" }, "保存完整配置后，打开「开启场景生图」，每轮正文下方会出现生图图标。连接测试不生成图片；实际生图可能产生费用。"),
 					!form ? null : section("服务", selectedChannel ? selectedChannel.hint : "",

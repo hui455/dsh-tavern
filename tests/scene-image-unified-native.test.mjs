@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createSceneImageNativeRuntime } from './fixtures/scene-image-native-runtime.mjs'
 
-test('真实 DSH 独立形象子对话、定妆附件、确认和剧情恢复', { skip: !process.env.DSH_BOOT_MODULE }, async t => {
+test('真实 DSH 默认出图不中断，已有形象参考可复用', { skip: !process.env.DSH_BOOT_MODULE }, async t => {
   const runtime = await createSceneImageNativeRuntime(process.env.DSH_BOOT_MODULE, { unifiedPlugin: true })
   t.after(() => runtime.dispose())
   runtime.chat.settleStatus = 'done'
@@ -15,8 +15,9 @@ test('真实 DSH 独立形象子对话、定妆附件、确认和剧情恢复', 
   const address = { sessionId: 'scene-parent', turn: 1, key: target.key }
   async function wait(check) { for (let n = 0; n < 600; n++) { const result = await check(); if (result) return result; await new Promise(resolve => setTimeout(resolve, 30)) } assert.fail('review timed out') }
   await runtime.service.start('scene-parent', 1, target.key)
-  await wait(async () => (await runtime.service.status('scene-parent', 1)).status === 'awaiting-characters')
-  assert.equal(runtime.imageRequests.length, 0)
+  await wait(async () => (await runtime.service.status('scene-parent', 1)).status === 'succeeded')
+  const originalVersion = (await runtime.service.status('scene-parent', 1)).versions[0].id
+  assert.equal(runtime.imageRequests.length, 1)
   let person = (await runtime.service.looks('scene-parent', 1, target.key)).people[0]
   await runtime.service.changeLook({ ...address, personId: person.id, revision: person.revision, action: 'discuss', requestId: 'native-look-discuss', message: '换成银色短发' })
   await wait(async () => !(await runtime.service.looks('scene-parent', 1, target.key)).people[0].busy)
@@ -34,10 +35,10 @@ test('真实 DSH 独立形象子对话、定妆附件、确认和剧情恢复', 
   await runtime.service.changeLook({ ...address, personId: person.id, revision: 2, action: 'confirm', requestId: 'native-look-confirm', candidateId: view.people[0].candidate.id, consent: view.capability.gateway })
   await runtime.restart()
   assert.equal((await runtime.service.looks('scene-parent', 1, target.key)).people[0].approved, true)
-  await runtime.service.start('scene-parent', 1, target.key, { requestId: 'native-look-resume' })
+  await runtime.service.start('scene-parent', 1, target.key, { requestId: 'native-look-resume', kind: 'repaint', versionId: originalVersion })
   await wait(async () => (await runtime.service.status('scene-parent', 1)).status === 'succeeded')
-  assert.equal(runtime.imageRequests.length, 2)
-  assert.match(runtime.imageRequests[1].prompt, /short silver hair/)
+  assert.equal(runtime.imageRequests.length, 3)
+  assert.match(runtime.imageRequests[2].prompt, /short silver hair/)
   assert.equal(sessionEvents(runtime.parent.agent.session).length, before)
 })
 
