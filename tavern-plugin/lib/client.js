@@ -15680,10 +15680,6 @@ function bindTavernFontZoom(node, win) {
 			const sampling = fieldsOf(["steps", "guidance"]).filter(advancedVisible);
 			const setStyle = function (patch) { setDirty(true); setForm(function (current) { return Object.assign({}, current, { style: Object.assign({}, current.style, patch) }); }); };
 			return h("div", { className: "dsh-tavern-settings-group" },
-                !form ? null : h("label", { className: "dsh-tavern-background-task" },
-                    h("span", null, "配图提示词来源", h("span", { className: "dsh-tavern-settings-desc" }, "主对话同步规划并保存配图方案，不显示在正文；缺失或无效时由独立助手补齐。自动生图关闭时仅保存方案，点击生图才执行。")),
-                    h("select", { "aria-label": "配图提示词来源", value: form.promptSource || "independent", disabled: busy, onChange: function (event) { void save({ promptSource: event.target.value }); } },
-                        h("option", { value: "independent" }, "独立生图助手"), h("option", { value: "main" }, "主对话同步生成"))),
 				!form ? null : h("label", { className: "dsh-tavern-background-task" },
 					h("span", null, "开启场景生图", h("span", { className: "dsh-tavern-settings-desc" }, form.enabled ? "所有游戏的每轮正文下方显示生图图标；关闭后隐藏，已有插图保留。" : form.ready && !dirty ? "开启后，所有游戏的每轮正文下方显示生图图标。" : "需先保存完整的生图配置（渠道、模型和 API Key）才能开启。")),
 					h("input", { type: "checkbox", role: "switch", "aria-label": "开启场景生图", checked: form.enabled === true, disabled: busy || !form.enabled && (dirty || !form.ready), onChange: function (e) { void save({ enabled: e.target.checked }); } })),

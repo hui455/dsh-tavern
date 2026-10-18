@@ -1,4 +1,3 @@
-import { matchingForegroundPlans } from './foreground-scene-plans.js'
 import { postureForContext } from './posture-context.js'
 import { createHash, randomUUID } from 'node:crypto'
 import { projectAgentContent } from './runtime-content-projection.js'
@@ -70,7 +69,7 @@ export function computeSceneTarget(chat, turn) {
   // appending later rounds or changing variable metadata does not invalidate art.
   const prefix = chat.messages.slice(0, index).map(item => [item.role, item.turn, item.sourceText ?? item.text])
   const key = hash(JSON.stringify([chat.id, prefix, index, turn, swipeId, sourceDigest]))
-  return { key, turn: Number(turn), swipeId, sourceDigest, source, ...(message.foregroundScenePlan ? { foregroundScenePlan: message.foregroundScenePlan } : {}) }
+  return { key, turn: Number(turn), swipeId, sourceDigest, source }
 }
 
 export function projectedSceneText(source, macroState) {
@@ -467,20 +466,6 @@ export function createSceneIllustrations(deps) {
       const targetIndex = targetMessages.findIndex(message => message.role === 'assistant' && Number(message.turn || 1) === target.turn)
       const playerMessage = (targetIndex >= 0 ? targetMessages.slice(0, targetIndex) : []).reverse().find(message => message.role === 'user')
       if (prepared.input) prepared.input = { ...prepared.input, playerRequest: String(playerMessage?.sourceText || playerMessage?.text || '').slice(0, 2000), camera: { requested: viewpoint, player: chat.playerName || chat.userName || '用户角色', instruction: '单角色控制默认第一人称；必要时补充上帝视角。多角色、阵营或世界控制题材按需采用上帝视角；不得硬把用户画成某个人。手动 requested 优先。' }, contentPreference: { adultContentEnabled: active.nsfw === true, instruction: '仅控制内容取舍，不要将 NSFW 字样或控制字段写进画面描述。开启不代表要把普通场景成人化。' }, ...(sequence ? { sequence: { maxPictures: SCENE_EXTRA_SLOTS + 1, instruction: '先判断本轮是否需要多图。主图之外，仅不同地点、时间、关键动作或有价值的补充视角才提交 additionalScenes；无需补图则空数组。每项以目标正文不同原句为 anchor，不重复同一构图。' } } : {}) }
-      if (!prepared.saved && kind === 'generate' && active.promptSource === 'main') {
-        const candidates = matchingForegroundPlans(target)
-        const index = target.slot ? options.foregroundSceneIndex : 0
-        if (candidates && Number.isInteger(index) && candidates[index]) {
-          try {
-            const candidate = structuredClone(candidates[index])
-            // A main-dialogue plan is bound to exact final story text, not a guessed future anchor.
-            if (!candidate.anchor || !projectedSceneText(target.source, {}).includes(candidate.anchor)) throw new Error('主对话配图原句未出现在正文中')
-            candidate.additionalScenes = index === 0 ? candidates.slice(1).map(item => ({ anchor: item.anchor, description: item.description, viewpoint: item.viewpoint || 'first-person' })) : []
-            prepared.saved = await plans.snapshot(chat.id, await plans.commit(prepared, candidate))
-            prepared.input = { ...prepared.input, planSource: 'main' }
-          } catch (error) { prepared.input = { ...prepared.input, foregroundPlanFallback: String(error.message).slice(0, 500) } }
-        }
-      }
       const expressionGuidance = imageExpressionGuidance(active)
       if (providerTask) prepared.saved = existing.plan
       if (prepared.input && expressionGuidance) prepared.input = { ...prepared.input, expressionGuidance }
@@ -503,7 +488,6 @@ export function createSceneIllustrations(deps) {
       if (!claimed) return present(target, record)
       record.diagnosticContext = { chatId: chat.id, sessionId }
       record.configuration = { ...channelSettings(active), style: active.style }
-      record.planSource = prepared.input?.planSource === 'main' ? 'main' : 'independent'
       record.diagnostics = { input: prepared.input, omitted: material.omitted, references: [],
         state: { omitted: material.stateAudit || [], sources: (prepared.sources || []).filter(source => source.origin?.kind === 'mvu-state') }, validations: [] }
       diagnosticSecrets.set(record.requestId, [apiKey])
@@ -528,7 +512,7 @@ export function createSceneIllustrations(deps) {
             const state = await status(sessionId, turn)
             if (!state.versions.length || state.extras.some(item => ['failed', 'cancelled', 'running'].includes(item.status))) break
             const scene = scenes[index]
-            const next = await start(sessionId, turn, base.key, { kind: 'add', sequence: false, foregroundSceneIndex: index + 1, viewpoint: scene.viewpoint,
+            const next = await start(sessionId, turn, base.key, { kind: 'add', sequence: false, viewpoint: scene.viewpoint,
               instruction: '按已规划的场景配图：' + scene.description + '\n使用正文原句作为 anchor：' + scene.anchor,
               requestId: 'sequence-' + hash(requestId + ':' + index).slice(0, 48) })
             const nextPath = pathFor(chat.id, next.key)

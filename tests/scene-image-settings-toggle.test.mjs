@@ -106,16 +106,3 @@ test('NSFW is an independent setting switch and never starts generation', async 
   assert.deepEqual(calls.find(item => item.method === 'saveSceneImageSettings').args, { provider: 'openai', nsfw: true })
   assert.ok(!calls.some(item => /generate|testSceneImageGeneration/i.test(item.method)))
 })
-
-test('scene prompt source can switch without starting an image request', async t => {
-  const { form, calls } = await openTavernSettings(t, { settings, respond(method, args) {
-    if (method === 'saveSceneImageSettings') return { settings: { ...settings, promptSource: args.promptSource } }
-  } })
-  const source = form.getByLabel('配图提示词来源', { exact: true })
-  assert.equal(await source.inputValue(), 'independent')
-  await source.selectOption('main')
-  await form.getByRole('status').filter({ hasText: '已保存生图配置' }).waitFor()
-  assert.equal(await source.inputValue(), 'main')
-  assert.equal(calls.find(item=>item.method==='saveSceneImageSettings').args.promptSource,'main')
-  assert.ok(!calls.some(item=>/generate/i.test(item.method)))
-})

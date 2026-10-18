@@ -359,8 +359,7 @@ export function createNativeConversationStorage({dataRoot,onIO}){
    const reference=page.messages[0].message,target=reference.scene?.target
    if(!target||target.turn!==turn)throw Error('Invalid scene index')
    const source=await selectedSceneSwipe(t,reference.runtimeRef,target.swipeId)??await t.get(reference.runtimeRef,'/sourceText')??await t.get(reference.runtimeRef,'/text')??''
-   const foregroundScenePlan=await t.get(reference.runtimeRef,'/foregroundScenePlan')
-   targets[turn]={...target,source:String(source),...(foregroundScenePlan?{foregroundScenePlan}:{})}
+   targets[turn]={...target,source:String(source)}
   }
   const latest=await t.get(root,'/latest')
   let latestTurn=0
@@ -381,7 +380,7 @@ export function createNativeConversationStorage({dataRoot,onIO}){
    const page=await pages.readHistoryPage(id,{cursor,limit:500})
    for(const {position,message} of page.messages){
     const row={}
-    for(const field of ['role','turn','greeting','text','sourceText','swipeId','foregroundScenePlan']){
+    for(const field of ['role','turn','greeting','text','sourceText','swipeId']){
      const value=await t.get(message.runtimeRef,'/'+field)
      if(value!==undefined)row[field]=value
     }
