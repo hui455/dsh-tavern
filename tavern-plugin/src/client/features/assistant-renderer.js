@@ -734,7 +734,19 @@
 				const shown = Boolean(view && isPlayMode(view.mode) && view.releaseCapabilities && view.releaseCapabilities.sceneImages && turn > 0);
 				return shown ? React.createElement(SceneImageAction, { key: props.sessionId + ":" + turn, sessionId: props.sessionId, turn: turn }) : null;
 			}
+            // @include-domain card-reference-image-view.js
 			function register(input) {
+				input.ctx.inject(['uiConversation'], function (owner) {
+					const conversation = owner.get('uiConversation');
+					owner.effect(function () { return conversation.events.register(createCardReferenceImageDefinition()); }, 'dsh-tavern: reference image nodes');
+					owner.effect(function () { return owner.slots.inject('conversation.chat.node', function () {
+						return owner.slots.register({ name: 'conversation.chat.node', key: 'tavern-card-reference-images' }, function (props) {
+							return React.createElement('section', { className: 'dsh-tavern-reference-images', 'aria-label': '人物参考图' },
+								React.createElement('div', null, '人物参考图'),
+								props.renderMessageImages({ images: props.node.data.images, align: 'start' }));
+						});
+					}); }, 'dsh-tavern: reference image renderer');
+				});
 				const scriptOwner = createTavernScriptSessionOwner({ sessions: input.ctx.sessions, executeSlash: createTavernFrameSlashExecutor(input.ctx) });
 				const executeSlash = createTavernFrameSlashExecutor(input.ctx);
 				input.ctx.effect(function () {
