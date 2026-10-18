@@ -501,7 +501,7 @@
 			const h = React.createElement;
 			return h("div", { className: "dsh-tavern-card-grid" }, input.cards.map(function (card) {
 				const selected = input.isSelected(card.path);
-				const corner = [input.mention(card.path), input.menu(card.path)].filter(Boolean);
+				const corner = [input.mention(card.path), input.pin?.(card.path), input.menu(card.path, { hidePin: true })].filter(Boolean);
 				return h("div", { key: card.path, className: "dsh-tavern-card-grid-item" + (selected ? " selected" : "") + (card.error ? " broken" : "") },
 					h("button", { type: "button", className: "dsh-tavern-card-grid-open", title: card.error || card.name, "aria-pressed": input.selecting ? selected : undefined,
 						disabled: input.busy || (!input.selecting && input.place === "play" && Boolean(card.error)), onClick: function () { input.open(card.path); } },
@@ -557,7 +557,8 @@
 					if (!card || props.busy) return;
 					if (batch.managing) batch.toggle(path); else props.open(card);
 				},
-				menu: function (path) { const card = byPath.get(path); return card && props.menu && !batch.managing ? props.menu(card) : null; },
+				pin: function (path) { const card = byPath.get(path); return card && props.pin && !batch.managing ? props.pin(card) : null; },
+                menu: function (path, options) { const card = byPath.get(path); return card && props.menu && !batch.managing ? props.menu(card, options) : null; },
 				mention: function (path) { const card = byPath.get(path); return card && props.mention && !batch.managing ? props.mention(card) : null; }
 			};
 			return h(React.Fragment, null, switcher,

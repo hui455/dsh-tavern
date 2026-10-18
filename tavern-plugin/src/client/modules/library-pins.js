@@ -18,9 +18,10 @@ function useLibraryPins(kind, onError) {
       window.removeEventListener('focus', refresh);
     };
   }, [kind]);
-  function button(path, disabled) {
+  function button(path, disabled, options = {}) {
     const pinned = pins.includes(path);
-    return React.createElement('button', { type: 'button', className: 'dsh-tavern-btn', disabled: disabled || saving,
+    return React.createElement('button', { type: 'button', className: options.icon ? 'dsh-tavern-grid-pin' : 'dsh-tavern-btn', disabled: disabled || saving,
+      title: pinned ? '取消置顶' : '置顶', 'aria-label': (pinned ? '取消置顶' : '置顶') + (options.name ? '：' + options.name : ''),
       'aria-pressed': pinned, onClick: async function (event) {
         event.stopPropagation();
         if (running.current) return;
@@ -32,7 +33,10 @@ function useLibraryPins(kind, onError) {
         } catch (error) { onError(String(error.message || error)); }
         finally { running.current = false; setSaving(false); }
       }
-    }, pinned ? '取消置顶' : '置顶');
+    }, options.icon ? React.createElement('svg', { width: 16, height: 16, viewBox: '0 0 24 24', 'aria-hidden': true,
+      fill: pinned ? 'currentColor' : 'none', stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round', strokeLinejoin: 'round' },
+      React.createElement('path', { d: 'M8 3h8l-1 7 4 4v2H5v-2l4-4-1-7Z' }),
+      React.createElement('path', { d: 'M12 16v6' })) : pinned ? '取消置顶' : '置顶');
   }
   return { button, order: (items, pathOf = item => item.path) => items.slice().sort((a, b) => Number(pins.includes(pathOf(b))) - Number(pins.includes(pathOf(a)))) };
 }

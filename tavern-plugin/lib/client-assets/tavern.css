@@ -2888,3 +2888,9 @@ details.dsh-tavern-recall-guide > summary .dsh-tavern-recall-guide-heading > spa
 .dsh-tavern-card-info-details textarea { display: block; box-sizing: border-box; width: 100%; margin-top: 6px; resize: vertical; }
 .dsh-tavern-card-info-actions { display: flex; gap: 8px; margin-top: 12px; }
 textarea.dsh-tavern-prompt-input { resize: vertical; min-height: 120px; }
+
+.dsh-tavern-grid-pin { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 6px; color: var(--dsw-alias-label-primary); background: transparent; cursor: pointer; }
+.dsh-tavern-grid-pin[aria-pressed="true"] { color: var(--dsh-tavern-accent); background: color-mix(in srgb, var(--dsh-tavern-accent) 15%, transparent); }
+.dsh-tavern-grid-pin:hover,.dsh-tavern-grid-pin:focus-visible { background: color-mix(in srgb, currentColor 15%, transparent); }
+.dsh-tavern-grid-pin:disabled { opacity: .5; cursor: default; }
+.dsh-tavern-card-grid-item:has(.dsh-tavern-grid-pin) > .dsh-tavern-card-labels { top: 38px; right: 6px; }

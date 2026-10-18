@@ -234,7 +234,7 @@ function useCardOrganization(cards, busy, refresh, onError, batch, openDetails) 
           } }, saving ? '添加中…' : '添加' + (addPaths.length ? '（' + addPaths.length + '）' : '')))
       )) : null);
   }
-  function rowMenu(card) {
+  function rowMenu(card, options = {}) {
     return h('details', { className: 'dsh-tavern-card-row-menu',
       onBlur: event => { if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.open = false; },
       onKeyDown: event => { if (event.key === 'Escape') { event.currentTarget.open = false; event.currentTarget.querySelector('summary').focus(); } },
@@ -253,7 +253,7 @@ function useCardOrganization(cards, busy, refresh, onError, batch, openDetails) 
         onToggle: event => { if (event.newState === 'closed' || event.nativeEvent?.newState === 'closed') event.currentTarget.closest('details').open = false; }
       },
         h('button', { type: 'button', disabled, onClick: event => { event.currentTarget.closest('details').open = false; if (openDetails) openDetails(card); else setDetailCard(card); } }, '详情'),
-        pins.button(card.path, disabled),
+        options.hidePin ? null : pins.button(card.path, disabled),
         h('div', { className: 'dsh-tavern-card-row-menu-title' }, '移到分组'),
         ['', ...groups].map(group => h('button', { key: group, type: 'button', disabled,
           'aria-pressed': (card.group || '') === group,
@@ -272,5 +272,5 @@ function useCardOrganization(cards, busy, refresh, onError, batch, openDetails) 
         onChange: event => submit({ action: 'cards', paths: [card.path], group: event.target.value.slice(6) }) }, options())),
       h('button', { className: 'dsh-tavern-btn', disabled, onClick: () => nameGroup() }, '创建分组'));
   }
-  return { visible, toolbar, rowMenu, detailSettings, addCardsFooter, renderCards: render => visible.map(render) };
+  return { visible, toolbar, rowMenu, pin: card => pins.button(card.path, disabled, { icon: true, name: card.name }), detailSettings, addCardsFooter, renderCards: render => visible.map(render) };
 }
