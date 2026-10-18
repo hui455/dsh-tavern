@@ -1,5 +1,7 @@
 import { createHash, randomInt } from 'node:crypto'
 
+export const COMFY_ASPECT_RATIOS = ['1:1', '2:3', '3:2', '3:4', '4:3', '9:16', '16:9', '21:9']
+
 const object = value => value && typeof value === 'object' && !Array.isArray(value)
 const safeKey = value => typeof value === 'string' && /^[\w.:-]{1,120}$/.test(value) && !['__proto__', 'constructor', 'prototype'].includes(value)
 // Impact Pack declares these UI selectors as required API inputs. Keep the
@@ -79,10 +81,10 @@ export function comfyWorkflow(value) {
     if (Number.isSafeInteger(node.inputs.steps)) bindings.steps = [{ node: id, input: 'steps' }]
     if (typeof node.inputs.cfg === 'number' && Number.isFinite(node.inputs.cfg)) bindings.guidance = [{ node: id, input: 'cfg' }]
   }
-  if (!object(bindings) || Object.keys(bindings).some(key => !['positive', 'seed', 'batch', 'negative', 'steps', 'guidance'].includes(key))) fail('映射只能包含 positive、seed、batch、negative、steps、guidance')
-  for (const key of ['negative', 'steps', 'guidance']) if (Object.hasOwn(bindings, key) && !Array.isArray(bindings[key])) fail('可选参数映射必须是数组')
+  if (!object(bindings) || Object.keys(bindings).some(key => !['positive', 'seed', 'batch', 'negative', 'steps', 'guidance', 'width', 'height'].includes(key))) fail('映射只能包含 positive、seed、batch、negative、steps、guidance、width、height')
+  for (const key of ['negative', 'steps', 'guidance', 'width', 'height']) if (Object.hasOwn(bindings, key) && !Array.isArray(bindings[key])) fail('可选参数映射必须是数组')
   const normalized = {}, used = new Set()
-  for (const key of ['positive', 'seed', 'batch', ...['negative', 'steps', 'guidance'].filter(key => bindings[key]?.length)]) {
+  for (const key of ['positive', 'seed', 'batch', ...['negative', 'steps', 'guidance', 'width', 'height'].filter(key => bindings[key]?.length)]) {
     const items = bindings[key] || []
     if (!Array.isArray(items) || items.length > 32 || key === 'positive' && !items.length) fail('正向提示词映射不能为空，单项最多 32 个')
     normalized[key] = items.map(item => {
@@ -98,6 +100,11 @@ export function comfyWorkflow(value) {
       used.add(slot)
       return { node: item.node, input: item.input }
     })
+  }
+  if (Boolean(normalized.width?.length) !== Boolean(normalized.height?.length)) fail('width 和 height 映射须成对提供')
+  for (const key of ['width', 'height']) for (const item of normalized[key] || []) {
+    const value = prompt[item.node].inputs[item.input]
+    if (value < 64 || value > 4096 || value % 8) fail('宽高须为 64–4096 且为 8 的倍数')
   }
   // Only the selected output's dependencies are submitted. Unrelated saved
   // outputs cannot run a second branch on the user's shared server.
@@ -117,6 +124,17 @@ export function compileComfyWorkflow(workflow, text, options = {}) {
     if (!config.bindings[binding]?.length) fail('缺少 ' + binding + ' 映射')
     for (const item of config.bindings[binding]) prompt[item.node].inputs[item.input] = field === 'negativePrompt' ? options[field] : Number(options[field])
   }
+  if (options.aspectRatio) {
+    if (!COMFY_ASPECT_RATIOS.includes(options.aspectRatio)) fail('不支持的画面比例')
+    if (!config.bindings.width?.length || !config.bindings.height?.length) fail('缺少 width/height 比例映射')
+    const first = key => { const item = config.bindings[key][0]; return prompt[item.node].inputs[item.input] }
+    const [w, h] = options.aspectRatio.split(':').map(Number)
+    const unit = Math.max(8, Math.min(Math.round(Math.sqrt(first('width') * first('height') / (w * h)) / 8) * 8, Math.floor(4096 / Math.max(w, h) / 8) * 8))
+    for (const [key, value] of [['width', w * unit], ['height', h * unit]]) {
+      if (value < 64) fail('所选比例的尺寸过小')
+      for (const item of config.bindings[key]) prompt[item.node].inputs[item.input] = value
+    }
+  }
   for (const item of config.bindings.positive) prompt[item.node].inputs[item.input] = text
   for (const item of config.bindings.seed) prompt[item.node].inputs[item.input] = seed
   for (const item of config.bindings.batch) prompt[item.node].inputs[item.input] = 1
@@ -124,6 +142,6 @@ export function compileComfyWorkflow(workflow, text, options = {}) {
     if (typeof node.inputs.batch_size !== 'number') fail('批量数量由其他节点控制，请维护者改为单张模板')
     node.inputs.batch_size = 1
   }
-  const generationParameters = Object.fromEntries(['negative', 'steps', 'guidance'].filter(key => config.bindings[key]?.length).map(key => [key, config.bindings[key].map(item => ({ ...item, value: prompt[item.node].inputs[item.input] }))]))
+  const generationParameters = Object.fromEntries(['negative', 'steps', 'guidance', 'width', 'height'].filter(key => config.bindings[key]?.length).map(key => [key, config.bindings[key].map(item => ({ ...item, value: prompt[item.node].inputs[item.input] }))]))
   return { prompt, generationParameters, outputNode: config.outputNode, digest: config.digest, ...(config.bindings.seed.length ? { seed } : {}) }
 }

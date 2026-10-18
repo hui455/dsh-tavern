@@ -34,7 +34,8 @@ export async function generateComfyImage(input, deps) {
   } else {
     // A picture's own negative tags only reach workflows that bind a negative prompt.
     const negativePrompt = config.workflow?.bindings?.negative?.length ? imageNegativePrompt(config.negativePrompt, input) : config.negativePrompt
-    const compiled = compileComfyWorkflow(config.workflow, input.prompt, { ...config, negativePrompt })
+    const aspectRatio = config.aspectRatio === 'auto' ? (input.plan?.aspectRatio || (input.style?.orientation === 'fixed' ? '3:4' : { portrait: '3:4', landscape: '4:3', square: '1:1' }[input.plan?.orientation]) || '3:4') : config.aspectRatio
+    const compiled = compileComfyWorkflow(config.workflow, input.prompt, { ...config, negativePrompt, aspectRatio })
     task = { provider: 'comfyui', promptId: randomUUID(), clientId: randomUUID(), baseURL: config.baseURL, workflowDigest: compiled.digest, outputNode: compiled.outputNode, state: 'submitting', generationParameters: compiled.generationParameters, ...(compiled.seed === undefined ? {} : { seed: compiled.seed }) }
     await saveTask({})
     let response

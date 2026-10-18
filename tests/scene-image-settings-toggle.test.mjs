@@ -79,3 +79,17 @@ test('test generation asks before the paid request and shows the picture', async
   await form.getByLabel('API 根地址').fill('https://another.test/v1')
   assert.equal(await form.getByRole('button', { name: '测试生图', exact: true }).isDisabled(), true)
 })
+
+test('Comfy UI offers AI auto and all mapped ratios and saves fixed 3:4', async t => {
+  const comfy = { ...settings, provider: 'comfyui', activeProvider: 'comfyui', authType: 'none', aspectRatio: 'auto', workflow: { name: 'ratio fixture', bindings: { width: [{node:'2',input:'width'}], height: [{node:'2',input:'height'}] } }, channels: [{ id: 'comfyui', label: 'ComfyUI', fields: ['baseURL', 'authType', 'username', 'aspectRatio'] }] }
+  const { form, calls } = await openTavernSettings(t, { settings: comfy, respond(method, args) {
+    if (method === 'saveSceneImageSettings') return { settings: { ...comfy, ...args } }
+  } })
+  const ratio = form.getByLabel(/^画面比例/)
+  assert.equal(await ratio.inputValue(), 'auto')
+  assert.equal(await ratio.locator('option').count(), 10)
+  await ratio.selectOption('3:4')
+  await form.getByRole('button', { name: '保存生图配置', exact: true }).click()
+  await form.getByRole('status').filter({ hasText: '已保存生图配置' }).waitFor()
+  assert.equal(calls.find(call => call.method === 'saveSceneImageSettings').args.aspectRatio, '3:4')
+})

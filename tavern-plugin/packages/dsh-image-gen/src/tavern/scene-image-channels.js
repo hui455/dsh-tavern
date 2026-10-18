@@ -1,11 +1,11 @@
 import { novelaiSettings, novelaiRequest, novelaiChatRequest, novelaiArtists, novelaiEndpoints, NOVELAI_MODELS, NOVELAI_BASE_SECTIONS, NOVELAI_QUALITY_PRESETS, NOVELAI_UC_PRESETS, NOVELAI_SAMPLERS, NOVELAI_NOISE_SCHEDULES } from './scene-image-novelai.js'
-import { comfyWorkflow } from './scene-image-comfy-workflow.js'
+import { comfyWorkflow, COMFY_ASPECT_RATIOS } from './scene-image-comfy-workflow.js'
 import { imageReferenceCapability } from './scene-image-reference.js'
 
 // Protocol presets are versioned here, not inferred by issuing paid probes.
 const channels = [
   { id: 'dsh-image-gen', label: 'dsh-image-gen（内置插件）', model: '', pluginProvider: '', aspectRatio: '', size: '', fields: ['model', 'pluginProvider', 'aspectRatio', 'size'], hint: '随 Tavern 安装，无需另装插件。请到设置 → 插件 → Image generation 配置渠道、模型和 Key；此处无需重复填写。目前 Tavern 接入文生图，不含 ComfyUI 或参考图。' },
-  { id: 'comfyui', label: 'ComfyUI（自建）', baseURL: '', authType: 'none', username: '', fields: ['baseURL', 'authType', 'username'], hint: '使用维护者已部署的服务与工作流。导入 API 工作流或维护者准备的映射文件；不会安装模型、节点或清空共享队列。本机地址指 Tavern 服务器。' },
+  { id: 'comfyui', label: 'ComfyUI（自建）', baseURL: '', authType: 'none', username: '', fields: ['baseURL', 'authType', 'username', 'aspectRatio'], hint: '使用维护者已部署的服务与工作流。导入 API 工作流或维护者准备的映射文件；不会安装模型、节点或清空共享队列。本机地址指 Tavern 服务器。' },
   { id: 'novelai', label: 'NovelAI（官方或自定义渠道）', baseURL: 'https://image.novelai.net', model: 'nai-diffusion-5-full', size: '832x1216', fields: ['baseURL', 'model', 'size'], hint: '默认连 NovelAI 官方，使用 V5 Full。用自定义渠道时新建一个接入点，填它的地址和 Key：接口和官方一样的选「官方格式」，用对话接口出图的选「对话格式」。' },
   { id: 'openai', label: 'OpenAI（gpt-image 及兼容接口）', baseURL: 'https://api.openai.com/v1', model: 'gpt-image-2', size: '1024x1024', fields: ['baseURL', 'model', 'size'], hint: '官方可直接用默认地址与模型；自定义渠道请填写自己的地址和模型。' },
   { id: 'gemini', label: 'Google Gemini（官方）', baseURL: 'https://generativelanguage.googleapis.com/v1beta', model: 'gemini-3.1-flash-image', size: '1K', aspectRatio: '1:1', fields: ['baseURL', 'model', 'size', 'aspectRatio'], hint: '使用 Interactions API，不是聊天兼容地址。' },
@@ -113,6 +113,9 @@ export function channelSettings(value = {}, id = value.provider || 'openai') {
   }
   if (id === 'comfyui') {
     result.workflow = comfyWorkflow(value.workflow)
+    if (value.aspectRatio === undefined && result.workflow?.bindings.width?.length) result.aspectRatio = 'auto'
+    if (result.aspectRatio && !['auto', ...COMFY_ASPECT_RATIOS].includes(result.aspectRatio)) throw new Error('请选择有效的 ComfyUI 画面比例')
+    if (result.aspectRatio && !result.workflow?.bindings.width?.length) throw new Error('工作流缺少宽高映射，请导入支持比例的工作流')
     for (const field of IMAGE_ADVANCED_FIELDS) if (result[field] && !result.workflow?.bindings[field === 'negativePrompt' ? 'negative' : field]?.length) throw new Error('工作流缺少 ' + field + ' 映射，请重新导入支持该参数的工作流或清空该设置')
   }
   return result

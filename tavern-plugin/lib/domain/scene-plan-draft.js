@@ -1,3 +1,4 @@
+import { COMFY_ASPECT_RATIOS } from '../../packages/dsh-image-gen/src/tavern/scene-image-comfy-workflow.js'
 const object = (properties, required = []) => ({ type: 'object', properties, required, additionalProperties: false })
 const string = maxLength => ({ type: 'string', maxLength })
 const fields = ['appearance', 'clothing', 'action', 'expression', 'position']
@@ -15,6 +16,7 @@ export const SCENE_LAYOUT_TOOL = {
     continuity: { type: 'string', enum: ['continued', 'changed', 'uncertain'] },
     scene: object(propertiesFor(sceneFields, visual)), expressions: object(propertiesFor(sceneFields, string(1200))),
     moment: { type: 'string', enum: ['end', 'earlier'] },
+    aspectRatio: { type: 'string', enum: COMFY_ASPECT_RATIOS },
     orientation: { type: 'string', enum: ['portrait', 'landscape', 'square'] },
     negative: string(600), anchor: string(200),
     views: { type: 'array', items: object({ id: string(100), angle: { type: 'string', enum: ['front', 'side', 'back'] }, appearance: string(1200) }, ['id', 'angle']), maxItems: 8 },

@@ -88,3 +88,61 @@ test('ComfyUI error history is terminal even with completed:false; rejected subm
   await assert.rejects(generateSceneImage({ ...params, signal: controller.signal }, { wait: async () => { controller.abort() }, fetch: async url => url.endsWith('/prompt') ? Response.json({ prompt_id: saved.promptId }) : Response.json({}) }), /abort/i)
   assert.equal(saved.state, 'pending')
 })
+import { createServer } from 'node:http'
+import { COMFY_ASPECT_RATIOS } from '../tavern-plugin/lib/domain/scene-image-comfy-workflow.js'
+import { channelSettings } from '../tavern-plugin/lib/domain/scene-image-channels.js'
+import { updateSceneDraft, assembleSceneDraft } from '../tavern-plugin/lib/domain/scene-plan-draft.js'
+
+function ratioWorkflow() {
+  const workflow = comfyWorkflow(comfyGraph())
+  workflow.prompt['2'].inputs.width = 864
+  workflow.prompt['2'].inputs.height = 1152
+  workflow.bindings.width = [{ node: '2', input: 'width' }]
+  workflow.bindings.height = [{ node: '2', input: 'height' }]
+  return comfyWorkflow(workflow)
+}
+test('Comfy ratios preserve pixel budget, exact ratio and 8 alignment; reject malformed mappings', () => {
+  const workflow = ratioWorkflow()
+  for (const aspectRatio of COMFY_ASPECT_RATIOS) {
+    const compiled = compileComfyWorkflow(workflow, 'scene', { aspectRatio })
+    const { width, height } = compiled.prompt['2'].inputs
+    const [a, b] = aspectRatio.split(':').map(Number)
+    assert.equal(width * b, height * a)
+    assert.equal(width % 8, 0); assert.equal(height % 8, 0)
+    assert.ok(Math.abs(width * height / (864 * 1152) - 1) < 0.2)
+    assert.equal(compiled.generationParameters.width[0].value, width)
+  }
+  assert.equal(channelSettings({ provider: 'comfyui', workflow }).aspectRatio, 'auto')
+  const missing = structuredClone(workflow); delete missing.bindings.height
+  assert.throws(() => comfyWorkflow(missing), /成对/)
+  const linked = structuredClone(workflow); linked.prompt['2'].inputs.width = ['1', 0]
+  assert.throws(() => comfyWorkflow(linked), /连接/)
+  assert.throws(() => compileComfyWorkflow(workflow, 'scene', { aspectRatio: '100:1' }), /比例/)
+  assert.throws(() => channelSettings({ provider: 'comfyui', workflow: comfyGraph(), aspectRatio: 'auto' }), /宽高映射/)
+  assert.equal(compileComfyWorkflow(workflow, 'scene').prompt['2'].inputs.width, 864)
+})
+test('AI layout ratio reaches real Comfy HTTP request; fixed settings win and missing ratio falls back to 3:4', async t => {
+  const received = []
+  let id
+  const server = createServer(async (req, res) => {
+    res.setHeader('content-type', 'application/json')
+    if (req.url === '/prompt') {
+      let text = ''; for await (const chunk of req) text += chunk
+      const body = JSON.parse(text); received.push(body.prompt); id = body.prompt_id
+      res.end(JSON.stringify({ prompt_id: id }))
+    } else if (req.url.startsWith('/history/')) res.end(JSON.stringify({ [id]: { status: { status_str: 'success', completed: true }, outputs: { '7': { images: [{ filename: 'fixture.png', subfolder: '', type: 'output' }] } } } }))
+    else { res.setHeader('content-type', 'image/png'); res.end(png) }
+  })
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  t.after(() => { server.closeAllConnections(); server.close() })
+  const workflow = ratioWorkflow(), baseURL = `http://127.0.0.1:${server.address().port}`
+  const draft = updateSceneDraft(undefined, 'submit_scene_layout', { description: 'wide scene', subjects: [], continuity: 'uncertain', scene: {}, aspectRatio: '21:9', orientation: 'landscape' })
+  const plan = assembleSceneDraft(draft)
+  for (const [settings, chosenPlan, expected] of [['auto', plan, '21:9'], ['3:4', plan, '3:4'], ['auto', {}, '3:4'], ['auto', { orientation: 'square' }, '1:1']]) {
+    const result = await generateSceneImage({ provider: 'comfyui', baseURL, workflow, prompt: 'test scene', aspectRatio: settings, plan: chosenPlan })
+    assert.deepEqual(result.data, png)
+    const { width, height } = received.at(-1)['2'].inputs
+    const [a, b] = expected.split(':').map(Number); assert.equal(width * b, height * a)
+  }
+  assert.equal(received.length, 4)
+})

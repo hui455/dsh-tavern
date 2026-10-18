@@ -56,3 +56,10 @@ test('auto style: each plan writes its picture\'s style and is given the previou
   assert.equal((await fx.prepare(5, '天亮了。', { autoStyle: true })).input.styleRequest.previous.text, '国风厚涂，冷色雨夜')
   assert.equal((await fx.prepare(2, '回到前面补一张。', { autoStyle: true })).input.styleRequest.previous.text, '国风厚涂，冷色雨夜', 'the most recent picture, not story order')
 })
+
+test('exact AI aspect ratio survives committed plans and rejects unsupported values', async t => {
+  const fx = await fixture(t)
+  const plan = await fx.module.commit(await fx.prepare(), { ...first(), aspectRatio: '3:4', orientation: 'portrait' })
+  assert.equal(plan.aspectRatio, '3:4')
+  await assert.rejects(fx.module.commit(await fx.prepare(2), { ...first(), aspectRatio: '99:1' }), /aspectRatio/)
+})

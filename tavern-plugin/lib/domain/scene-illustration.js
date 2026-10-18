@@ -749,7 +749,7 @@ export function createSceneIllustrations(deps) {
   }
   // An explicit, paid check of the saved channel: one fixed picture, shown
   // once and never kept. It waits in the same queue as story pictures.
-  async function generateCardReference({ name, prompt, signal }) {
+  async function generateCardReference({ name, prompt, aspectRatio, signal }) {
     if (typeof name !== 'string' || !name.trim() || name.length > 100 || typeof prompt !== 'string' || !prompt.trim() || prompt.length > 12000) throw new Error('请提供人物名称和完整生图描述（最多 12000 字符）')
     const { active, apiKey } = await capture()
     if (!active.enabled || !channelReady(active, apiKey)) throw new Error('请先开启并配置场景生图')
@@ -760,7 +760,7 @@ export function createSceneIllustrations(deps) {
     const timer = setTimeout(() => controller.abort(), deps.timeoutMs || 300000)
     try {
       const profile = imageExpressionProfile(active)
-      const plan = applyImageStyle({ profile, description: name + '参考图', subjects: ['person'], people: [{ id: 'person', name }],
+      const plan = applyImageStyle({ profile, aspectRatio: aspectRatio || '3:4', description: name + '参考图', subjects: ['person'], people: [{ id: 'person', name }],
         blocks: [{ owner: 'person', field: 'appearance', text: prompt, tags: prompt }], prompt }, await styles.resolve(active.style, profile))
       const result = await imageQueue.run({ requestId: 'card-reference-' + randomUUID(), signal: controller.signal }, () =>
         imageModule.generate({ ...active, apiKey, plan, prompt: composeSceneImagePrompt(plan), referenceImages: [], signal: controller.signal, maxBytes: Math.min(deps.attachments()?.imageLimits?.maxImageBytes || 8 * 1024 * 1024, 8 * 1024 * 1024) }))

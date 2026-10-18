@@ -15465,7 +15465,7 @@ function bindTavernFontZoom(node, win) {
 				try {
 					if (file.size > 512000) throw new Error("工作流文件不能超过 500 KB");
 					let workflow; try { workflow = JSON.parse(await file.text()); } catch (e) { throw new Error("工作流不是有效 JSON 文件"); }
-					setForm(function (current) { return Object.assign({}, current, { workflow: workflow }); }); setDirty(true);
+					setForm(function (current) { return Object.assign({}, current, { workflow: workflow, aspectRatio: workflow.bindings && workflow.bindings.width && workflow.bindings.height ? "auto" : "" }); }); setDirty(true);
 					setNotice("已选择工作流，保存后将校验；不会请求生图。请只导入可信维护者提供的文件。");
 				} catch (e) { setNotice(String(e.message || e)); }
 				finally { setBusy(false); event.target.value = ""; }
@@ -15596,6 +15596,7 @@ function bindTavernFontZoom(node, win) {
 					noiseSchedule: [["karras", "Karras（默认）"], ["native", "Native"], ["exponential", "Exponential"], ["polyexponential", "Polyexponential"]],
 					varietyBoost: [["false", "关闭"], ["true", "开启（构图更多样）"]]
 				};
+				if (form.provider === "comfyui") choices.aspectRatio = [["", "沿用工作流尺寸"], ["auto", "AI 自动选择（默认 3:4）"]].concat(["1:1", "2:3", "3:2", "3:4", "4:3", "9:16", "16:9", "21:9"].map(function (ratio) { return [ratio, ratio]; }));
 				const choiceDefaults = { authType: "none", useOrder: "true", qualityPreset: "none", ucPreset: "none", sampler: "k_euler_ancestral", noiseSchedule: "karras", varietyBoost: "false" };
 				function change(event) { const value = event.target.value; setDirty(true); if (["baseURL", "authType", "username"].includes(field)) resetConnection(); if (field === "authType") setKey(""); setForm(function (current) { return Object.assign({}, current, { [field]: value }, field === "authType" ? { hasKey: false } : {}); }); }
 				let control;
@@ -15675,7 +15676,7 @@ function bindTavernFontZoom(node, win) {
 						form.provider === "comfyui" ? h("div", { className: "dsh-tavern-image-field" }, h("span", null, "工作流"),
 							actions(h("span", { className: "dsh-tavern-image-hint" }, form.workflow ? form.workflow.name || "已选择，保存时校验" : "尚未导入"),
 								h("label", { className: "dsh-tavern-btn dsh-tavern-file-btn" }, form.workflow ? "更换工作流" : "导入工作流", h("input", { type: "file", accept: ".json,application/json", disabled: busy, onChange: importWorkflow })))) : null,
-						form.provider !== "dsh-image-gen" && fieldsOf(["size", "aspectRatio"]).length ? row.apply(null, fieldsOf(["size", "aspectRatio"]).map(channelField)) : null,
+						form.provider !== "dsh-image-gen" && fieldsOf(["size", "aspectRatio"]).filter(function (field) { return form.provider !== "comfyui" || field !== "aspectRatio" || Boolean(form.workflow && form.workflow.bindings && form.workflow.bindings.width && form.workflow.bindings.height); }).length ? row.apply(null, fieldsOf(["size", "aspectRatio"]).filter(function (field) { return form.provider !== "comfyui" || field !== "aspectRatio" || Boolean(form.workflow && form.workflow.bindings && form.workflow.bindings.width && form.workflow.bindings.height); }).map(channelField)) : null,
 						row(h("label", null, "画风", h("select", { value: form.style.preset === "custom" ? "custom" : "auto", disabled: busy, onChange: function (e) { setStyle({ preset: e.target.value }); } }, (form.stylePresets || []).map(function (preset) { return h("option", { key: preset.id, value: preset.id }, preset.label); }))),
 							!["comfyui", "dsh-image-gen"].includes(form.provider) ? h("label", null, "画幅方向", h("select", { value: form.style.orientation || "auto", disabled: busy, onChange: function (e) { setStyle({ orientation: e.target.value }); } },
 								h("option", { value: "auto" }, "按画面自动切换横竖"), h("option", { value: "fixed" }, "固定为上面的尺寸"))) : null),

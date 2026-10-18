@@ -10,6 +10,7 @@ export function registerCardVisualReferenceTool({ tools, chatForSession, readCar
     parameters: {
       action: { type: 'string', required: true, enum: ['list', 'read', 'generate', 'upsert', 'remove', 'update_description'] },
       prompt: { type: 'string', description: 'generate 必填：完整人物参考图描述。须同时提供 text 稳定外貌文字；生成成功后自动保存图片、文字和提示词。仅用户要求生图时调用，一次一人；保存失败只重试保存。' },
+      aspectRatio: { type: 'string', enum: ['1:1', '2:3', '3:2', '3:4', '4:3', '9:16', '16:9', '21:9'], description: 'generate 可按构图自由选择比例，默认 3:4；用户固定的服务比例优先' },
       generationPrompt: { type: 'string', description: '保存已有生成图片时保留的完整生图提示词，generate 自动填写' },
       path: { type: 'string', description: '人物卡路径，省略为当前卡' },
       name: { type: 'string', description: '卡内人物名称，应与剧情中姓名一致' },
@@ -38,7 +39,7 @@ export function registerCardVisualReferenceTool({ tools, chatForSession, readCar
         if (!generateReference) throw new Error('当前未启用人物参考生图服务')
         if (typeof args.text !== 'string' || !args.text.trim() || args.text.length > 4000) throw new Error('生成参考图时须同时提供稳定外貌文字 text（最多 4000 字符）')
         updateVisualReferences(workspace, { ...args, action: 'upsert', expectedRevision: document.revision })
-        const result = await generateReference({ name: args.name, prompt: args.prompt, signal: exec.signal })
+        const result = await generateReference({ name: args.name, prompt: args.prompt, aspectRatio: args.aspectRatio, signal: exec.signal })
         let saved = false, saveError, revision
         try {
           const image = await attachments().readImage(result.attachment)
