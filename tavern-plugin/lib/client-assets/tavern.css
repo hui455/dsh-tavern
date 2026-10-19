@@ -2092,7 +2092,8 @@ html.dsh-tavern-hide-process [data-chat-flow-kind="turn-process"]:has([data-turn
 /* Visual hierarchy: accent is reserved for primary actions and live state. */
 .dsh-tavern-header-btn { height: 32px; padding: 0 12px; border: 1px solid var(--dsw-alias-border-l2); background: transparent; color: var(--dsw-alias-label-secondary); }
 .dsh-tavern-header-btn:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
-.dsh-tavern-choice-trigger { border-color: var(--dsw-alias-border-l2); background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-secondary); }
+.dsh-tavern-choice-trigger { min-height: 28px; padding: 3px 12px; border-color: var(--dsw-alias-border-l2); border-radius: 999px; background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-secondary); font-weight: 500; transition: border-color 140ms ease, background 140ms ease, color 140ms ease; }
+.dsh-tavern-choice-trigger[aria-expanded="true"] { border-color: var(--dsh-tavern-accent-border); background: var(--dsh-tavern-accent-soft); color: var(--dsh-tavern-accent); }
 .dsh-tavern-choice-trigger:hover:not(:disabled) { border-color: var(--dsh-tavern-accent-border); background: var(--dsh-tavern-accent-soft); color: var(--dsh-tavern-accent); }
 .dsh-local-settings .dsh-local-warning { color: var(--dsw-alias-label-tertiary); }
 .dsh-local-settings .dsh-local-warning::before { content: "⚠ "; }
@@ -2305,6 +2306,43 @@ select.dsh-tavern-settings-select:disabled { cursor: default; opacity: .55; }
 :is(.dsh-tavern-library, .dsh-tavern-presets, .dsh-tavern-resources, .dsh-tavern-user-profile, .dsh-tavern-card-memory, .dsh-tavern-status:not(.dsh-tavern-status-dashboard)) .dsh-tavern-btn.danger:hover:not(:disabled) {
   border-color: color-mix(in srgb, var(--dsh-tavern-accent-error) 35%, transparent); background: color-mix(in srgb, var(--dsh-tavern-accent-error) 8%, transparent); color: var(--dsh-tavern-accent-error);
 }
+
+/* Picker dialogs share the same button hierarchy; only "开始新游戏" stays solid. */
+.dsh-tavern-card-picker-head { min-height: 32px; margin-bottom: 12px; font-size: 15px; font-weight: 650; letter-spacing: -0.1px; }
+.dsh-tavern-card-picker .dsh-tavern-btn {
+  height: 30px; padding: 0 12px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px;
+  background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-primary); font-size: 12px; font-weight: 500; line-height: 28px; white-space: nowrap;
+}
+.dsh-tavern-card-picker .dsh-tavern-btn:hover:not(:disabled) { border-color: var(--dsh-tavern-accent-border); background: var(--dsh-tavern-accent-soft); color: var(--dsh-tavern-accent); }
+.dsh-tavern-card-picker .dsh-tavern-btn.danger { border-color: transparent; background: transparent; color: var(--dsh-tavern-accent-error); }
+.dsh-tavern-card-picker .dsh-tavern-btn.primary { border-color: transparent; background: var(--dsh-tavern-accent); color: var(--dsw-alias-brand-text, #fff); }
+.dsh-tavern-card-picker .dsh-tavern-btn.primary:hover:not(:disabled) { border-color: transparent; background: color-mix(in srgb, var(--dsh-tavern-accent) 88%, #000); color: var(--dsw-alias-brand-text, #fff); }
+/* The trailing dismiss action (关闭 / 暂时收起) is quiet. */
+.dsh-tavern-card-picker-head > .dsh-tavern-btn:last-child:not(.primary) { border-color: transparent; background: transparent; color: var(--dsw-alias-label-secondary); }
+.dsh-tavern-card-picker-head > .dsh-tavern-btn:last-child:not(.primary):hover:not(:disabled) { border-color: transparent; background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
+.dsh-tavern-card-picker .dsh-tavern-question-primary { height: 32px; padding: 0 16px; font-size: 13px; font-weight: 600; }
+.dsh-tavern-card-picker .dsh-tavern-question-primary:hover:not(:disabled) { background: color-mix(in srgb, var(--dsh-tavern-accent) 88%, #000); }
+.dsh-tavern-card-picker-help { padding: 8px 12px; border-radius: 8px; background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-secondary); font-size: 12px; line-height: 1.6; }
+/* Card rows: names in body ink, accent only on hover/selection. */
+.dsh-tavern-card-picker .dsh-tavern-card-pick { padding: 10px 12px; border-radius: 10px; transition: border-color 140ms ease, background 140ms ease; }
+.dsh-tavern-card-picker .dsh-tavern-card-pick b { color: var(--dsw-alias-label-primary); font-size: 14px; font-weight: 600; }
+.dsh-tavern-card-picker .dsh-tavern-card-pick:hover:not(:disabled) { border-color: var(--dsh-tavern-accent-border); background: var(--dsh-tavern-accent-soft); }
+.dsh-tavern-card-picker .dsh-tavern-card-pick:hover:not(:disabled) b { color: var(--dsh-tavern-accent); }
+/* Start tasks (no avatar): quiet bordered options. */
+.dsh-tavern-card-picker .dsh-tavern-card-pick:not(:has(.dsh-tavern-card-thumb)):not(.with-image) { margin-top: 8px; border-color: var(--dsw-alias-border-l2); background: var(--dsw-specific-input-major); }
+.dsh-tavern-card-picker .dsh-tavern-card-pick:not(:has(.dsh-tavern-card-thumb)):not(.with-image) span { margin-top: 4px; font-size: 12px; }
+.dsh-tavern-card-view-switch { margin: 4px 0 8px; padding: 2px; width: max-content; border-radius: 8px; background: var(--dsw-alias-interactive-bg-hover); gap: 2px; }
+.dsh-tavern-card-view-switch button { padding: 3px 12px; border: 0; border-radius: 6px; }
+.dsh-tavern-card-view-switch button[aria-pressed="true"] { background: var(--dsw-specific-input-major); color: var(--dsw-alias-label-primary); box-shadow: var(--dsw-shadow-lv1); font-weight: 600; }
+
+/* Sidebar history search matches the other tavern inputs. */
+.dsh-tavern-sidebar input[type="search"] {
+  box-sizing: border-box; height: 30px; padding: 0 10px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px;
+  background: var(--dsw-specific-input-major, var(--dsw-alias-bg-base)); color: var(--dsw-alias-label-primary); font: inherit; font-size: 12px; outline: none;
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+.dsh-tavern-sidebar input[type="search"]::placeholder { color: var(--dsw-alias-label-tertiary, var(--dsw-alias-label-secondary)); }
+.dsh-tavern-sidebar input[type="search"]:focus-visible { border-color: var(--dsh-tavern-accent-border); box-shadow: 0 0 0 3px var(--dsh-tavern-accent-soft); }
 
 /* Inputs, selects, search boxes. */
 :is(.dsh-tavern-library, .dsh-tavern-presets, .dsh-tavern-resources, .dsh-tavern-user-profile, .dsh-tavern-card-memory) :is(input:not([type="checkbox"]):not([type="file"]):not([type="radio"]), select) {
