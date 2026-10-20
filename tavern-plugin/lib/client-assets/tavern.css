@@ -3025,3 +3025,22 @@ textarea.dsh-tavern-prompt-input { resize: vertical; min-height: 120px; }
 .dsh-tavern-card-picker .dsh-tavern-task-pick:hover:not(:disabled) .dsh-tavern-task-copy > b { color: var(--dsw-alias-label-primary); }
 .dsh-tavern-card-pick.dsh-tavern-task-pick .dsh-tavern-task-copy > span { margin-top: 3px; font-size: 12px; line-height: 1.5; color: var(--dsw-alias-label-secondary); }
 @media (max-width: 640px) { .dsh-tavern-task-grid { grid-template-columns: minmax(0, 1fr); } }
+
+/* Composer dock: actions align with the composer; an open panel joins the composer as one card. */
+.dsh-tavern-dock-actions { justify-content: flex-start; padding-inline: 16px; }
+[data-slot="conversation.input.dock"] > .dsh-tavern-question:last-child { margin-bottom: -7px; border-bottom-width: 0; border-bottom-left-radius: 0; border-bottom-right-radius: 0; box-shadow: none; }
+[data-composer-seat]:has([data-slot="conversation.input.dock"] > .dsh-tavern-question:last-child) [data-composer-card] { border-top-left-radius: 0; border-top-right-radius: 0; }
+@media (max-width: 1023px) {
+  .dsh-tavern-dock-actions { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding-inline: 12px; }
+  .dsh-tavern-dock-actions::-webkit-scrollbar { display: none; }
+  .dsh-tavern-dock-actions > * { flex: none; }
+}
+
+/* Tavern status: Guide library link sits in the heading; add box and button share a row. */
+.dsh-tavern-status-dashboard .dsh-tavern-guide-section > .dsh-tavern-status-label > .dsh-tavern-guide-caption { margin-right: auto; }
+.dsh-tavern-guide-library-link { padding: 4px 6px; border: 0; border-radius: 6px; background: transparent; color: var(--dsh-tavern-accent); font: inherit; font-size: 12px; font-weight: 500; cursor: pointer; }
+.dsh-tavern-guide-library-link:hover { background: var(--dsh-tavern-accent-soft); }
+.dsh-tavern-status-dashboard .dsh-tavern-guide-section .dsh-tavern-guide-add { flex-direction: row; align-items: flex-end; gap: 8px; margin-top: 12px; }
+.dsh-tavern-status-dashboard .dsh-tavern-guide-add textarea { flex: 1; min-width: 0; min-height: 40px; }
+.dsh-tavern-status-dashboard .dsh-tavern-guide-add .dsh-card-primary { flex: none; }
+.dsh-tavern-status-dashboard .dsh-tavern-card-reload { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
