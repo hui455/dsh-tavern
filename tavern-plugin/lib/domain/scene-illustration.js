@@ -20,6 +20,7 @@ import { createSceneCharacterDesigns } from './scene-character-designs.js'
 import { sceneStateSources } from './scene-state.js'
 import { createSceneImageDiagnostics, sceneAttemptDiagnostic } from './scene-image-diagnostics.js'
 import { createSceneImageReferences, imageReferencePeople } from './scene-image-reference.js'
+import { comfySubmissionWasRefused } from './scene-image-comfy.js'
 
 export const IMAGE_CREDENTIAL = 'DSH_TAVERN_IMAGE_API_KEY'
 const hash = value => createHash('sha256').update(value).digest('hex')
@@ -196,6 +197,15 @@ export function createSceneIllustrations(deps) {
   }
   async function readRecord(path) {
     const record = await deps.store.readJson(path)
+    if (record?.status === 'failed' && record.outcome === 'unconfirmed' && record.providerTask?.state === 'submitting') {
+      const chatId = record.diagnosticContext?.chatId
+      const history = chatId && diagnostics.read ? await diagnostics.read(chatId).catch(() => ({ records: [] })) : { records: [] }
+      const attempts = [{ ...record, droppedProviderEvents: record.diagnostics?.droppedProviderEvents }, ...history.records.map(item => ({ ...item.details, droppedProviderEvents: item.details?.diagnostics?.droppedProviderEvents }))]
+      if (comfySubmissionWasRefused(record.providerTask, attempts)) {
+        return deps.store.updateJson(path, current => current?.requestId === record.requestId && current.status === 'failed' && current.providerTask?.state === 'submitting'
+          ? { ...current, outcome: 'not_requested', providerTask: { ...current.providerTask, state: 'rejected', rejectionReason: 'connection-refused' }, error: '无法连接 ComfyUI，生图请求未送达。请启动服务后点击重试。' } : current)
+      }
+    }
     if (record?.status === 'running' && !ownerIsLive(record, path)) {
       const recoverable = await pendingImages.has(path, record.requestId)
       const interrupted = await deps.store.updateJson(path, current => current?.requestId === record.requestId && current.status === 'running' && !ownerIsLive(current, path)
@@ -599,7 +609,7 @@ export function createSceneIllustrations(deps) {
             record.providerRequests = [...(record.providerRequests || []), event].slice(-100)
             await logAttempt(record, 'provider-request')
           }, async onProviderTask(task) { record.providerTask = task; await writeJob(path, record) }, signal: controller.signal, maxBytes: deps.attachments()?.imageLimits?.maxImageBytes }) }
-        catch (error) { record.outcome = record.providerTask ? (['rejected', 'failed'].includes(record.providerTask.state) ? 'rejected' : 'unconfirmed') : error.imageOutcome || 'unconfirmed'; providerError = redactImageError(error.message || '生图失败', input.apiKey); record.diagnostics.providerFailure = error.imageFailure; throw error }
+        catch (error) { record.outcome = record.providerTask?.rejectionReason === 'connection-refused' ? 'not_requested' : record.providerTask ? (['rejected', 'failed'].includes(record.providerTask.state) ? 'rejected' : 'unconfirmed') : error.imageOutcome || 'unconfirmed'; providerError = redactImageError(error.message || '生图失败', input.apiKey); record.diagnostics.providerFailure = error.imageFailure; throw error }
       })
       record.stage = 'saving'
       record.recovery = 'save'

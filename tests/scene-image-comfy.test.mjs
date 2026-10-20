@@ -146,3 +146,46 @@ test('AI layout ratio reaches real Comfy HTTP request; fixed settings win and mi
   }
   assert.equal(received.length, 4)
 })
+import { isComfyConnectionRefused, comfySubmissionWasRefused } from '../tavern-plugin/lib/domain/scene-image-comfy.js'
+
+test('only definite connection refusal permits a new ComfyUI submission', () => {
+  const refused = Object.assign(new Error('connect'), { code: 'ECONNREFUSED' })
+  assert.equal(isComfyConnectionRefused(new TypeError('fetch failed', { cause: refused })), true)
+  assert.equal(isComfyConnectionRefused(new AggregateError([refused, refused])), true)
+  for (const error of [new Error('ECONNREFUSED'), Object.assign(new Error(), { code: 'ECONNRESET' }), new AggregateError([refused, new Error('unknown')]), new AggregateError([])]) assert.equal(isComfyConnectionRefused(error), false)
+})
+
+test('legacy retry recovery requires exact task POST refusal evidence', () => {
+  const task = { provider:'comfyui', state:'submitting', promptId:'one', clientId:'client', baseURL:'http://localhost:8188', workflowDigest:'digest' }
+  const events = [{requestId:1,method:'POST',phase:'dispatch'}, {requestId:1,method:'POST',phase:'transport-error',networkCodes:['ECONNREFUSED']}]
+  const attempt = {providerTask:task,providerRequests:events}
+  assert.equal(comfySubmissionWasRefused(task,[attempt]),true)
+  assert.equal(comfySubmissionWasRefused(task,[{...attempt,providerTask:{...task,baseURL:task.baseURL+'/'}}]),true)
+  assert.equal(comfySubmissionWasRefused(task,[{providerTask:task,providerRequests:[{method:'GET',phase:'response',status:200}]}]),false)
+  for (const change of [{promptId:'other'},{clientId:'other'},{baseURL:'http://other'},{workflowDigest:'other'},{state:'pending'}]) assert.equal(comfySubmissionWasRefused(task,[{...attempt,providerTask:{...task,...change}}]),false)
+  assert.equal(comfySubmissionWasRefused(task,[{...attempt,droppedProviderEvents:1}]),false)
+  for (const networkCodes of [[],['ECONNRESET'],['ECONNREFUSED','ETIMEDOUT']]) assert.equal(comfySubmissionWasRefused(task,[{...attempt,providerRequests:[events[0],{...events[1],networkCodes}]}]),false)
+  assert.equal(comfySubmissionWasRefused(task,[{...attempt,providerRequests:[...events,{requestId:1,method:'POST',phase:'response',status:200}]}]),false)
+})
+
+test('real refused TCP connection persists rejection; explicit retry submits exactly once after server starts', async t => {
+  const {createServer}=await import('node:http')
+  const server=createServer((req,res)=>{
+    const chunks=[];req.on('data',c=>chunks.push(c));req.on('end',()=>{
+      if(req.url==='/prompt'){posts++;id=JSON.parse(Buffer.concat(chunks)).prompt_id;res.setHeader('content-type','application/json');res.end(JSON.stringify({prompt_id:id}))}
+      else if(req.url.startsWith('/history/'))res.end(JSON.stringify({[id]:{status:{completed:true},outputs:{'7':{images:[{filename:'fixture.png',subfolder:'',type:'output'}]}}}}))
+      else {res.setHeader('content-type','image/png');res.end(png)}
+    })
+  })
+  let posts=0,id,saved
+  await new Promise(r=>server.listen(0,'127.0.0.1',r));const port=server.address().port
+  await new Promise(r=>server.close(r))
+  t.after(()=>{server.closeAllConnections();server.close()})
+  const params={...input(),baseURL:'http://127.0.0.1:'+port,onProviderTask:async task=>{saved=task}}
+  await assert.rejects(generateSceneImage(params),e=>e.imageOutcome==='not_requested'&&/未送达/.test(e.message))
+  assert.equal(saved.state,'rejected');assert.equal(saved.rejectionReason,'connection-refused');assert.equal(posts,0)
+  const previous=saved.promptId
+  await new Promise(r=>server.listen(port,'127.0.0.1',r))
+  const result=await generateSceneImage(params)
+  assert.deepEqual(result.data,png);assert.equal(posts,1);assert.notEqual(saved.promptId,previous)
+})

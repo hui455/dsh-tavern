@@ -6,6 +6,39 @@ import { compileComfyWorkflow } from './scene-image-comfy-workflow.js'
 const uuid = value => typeof value === 'string' && /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i.test(value)
 const opaqueId = value => typeof value === 'string' && /^[\w-]{1,128}$/.test(value) && !['__proto__', 'constructor', 'prototype'].includes(value)
 
+// Only a refused connection proves this POST never reached the server.
+// Resets, timeouts and mixed AggregateErrors may have happened after acceptance.
+export function isComfyConnectionRefused(error, seen = new Set()) {
+  if (!error || typeof error !== 'object' || seen.has(error)) return false
+  seen.add(error)
+  if (Array.isArray(error.errors)) return error.errors.length > 0 && error.errors.every(item => isComfyConnectionRefused(item, new Set(seen)))
+  if (error.code) return error.code === 'ECONNREFUSED'
+  return isComfyConnectionRefused(error.cause, seen)
+}
+
+// Older builds persisted "submitting" even when connect() was refused. Recover
+// only from the exact task's complete POST evidence, never from an empty queue.
+export function comfySubmissionWasRefused(task, attempts) {
+  if (task?.provider !== 'comfyui' || task.state !== 'submitting') return false
+  let proof = false
+  for (const attempt of attempts) {
+    const saved = attempt.providerTask
+    if (!saved || saved.promptId !== task.promptId || saved.clientId !== task.clientId || String(saved.baseURL).replace(/\/+$/, '') !== String(task.baseURL).replace(/\/+$/, '') || saved.workflowDigest !== task.workflowDigest) continue
+    if (saved.state !== 'submitting' || attempt.droppedProviderEvents) return false
+    const posts = (attempt.providerRequests || []).filter(event => event.method === 'POST')
+    if (!posts.length) continue // Later read-only retries contain no POST.
+    const dispatched = posts.filter(event => event.phase === 'dispatch')
+    if (!dispatched.length) return false
+    for (const event of dispatched) {
+      const events = posts.filter(item => item.requestId === event.requestId)
+      const failures = events.filter(item => item.phase === 'transport-error')
+      if (events.some(item => item.phase === 'response') || failures.length !== 1 || !failures[0].networkCodes?.length || !failures[0].networkCodes.every(code => code === 'ECONNREFUSED')) return false
+      proof = true
+    }
+  }
+  return proof
+}
+
 /** One submitted job, then read-only reconciliation. Persist before dispatch:
  * ComfyUI accepts client IDs but does not promise idempotent POST /prompt. */
 export async function generateComfyImage(input, deps) {
@@ -43,6 +76,10 @@ export async function generateComfyImage(input, deps) {
     catch (error) {
       // Explicit request rejection is distinct from a connection lost after
       // submission. Unknown acceptance is never retried as a paid POST.
+      if (isComfyConnectionRefused(error)) {
+        await saveTask({ state: 'rejected', rejectionReason: 'connection-refused' })
+        throw Object.assign(new Error('无法连接 ComfyUI，生图请求未送达。请启动服务后点击重试。', { cause: error }), { imageOutcome: 'not_requested' })
+      }
       if ([400, 401, 402, 403, 404, 422].includes(error.status)) await saveTask({ state: 'rejected' })
       throw error
     }

@@ -673,3 +673,36 @@ for (const nsfw of [false, true]) test('retired persisted content preference is 
   assert.equal(saved.provider, before.provider)
   assert.equal(fx.imageCalls(), 0)
 })
+
+test('ComfyUI refused submission allows manual retry and legacy diagnostic recovery without confirmation', async t => {
+  let posts=0,jobId,offline=true
+  const fx=await fixture(t,{generate: input=>generateSceneImage(input,{fetch:async(url,init)=>{
+    if(url.endsWith('/prompt')){
+      posts++;if(offline)throw new TypeError('fetch failed',{cause:Object.assign(new Error('connect'),{code:'ECONNREFUSED'})})
+      jobId=JSON.parse(init.body).prompt_id;return Response.json({prompt_id:jobId})
+    }
+    if(url.includes('/history/'))return Response.json({[jobId]:{status:{completed:true},outputs:{'7':{images:[{filename:'fixture.png',subfolder:'',type:'output'}]}}}})
+    return new Response(png)
+  }})})
+  await fx.service.configure({provider:'comfyui',baseURL:'http://localhost:8188',workflow:comfyGraph()})
+  await fx.service.configure({enabled:true})
+  const key=sceneTarget(fx.chat(),2).key
+  await fx.service.start('parent',2,key)
+  const failed=await until(async()=>{const row=await fx.service.status('parent',2);return row.status==='failed'&&row})
+  assert.equal(failed.outcome,'not_requested');assert.match(failed.error,/未送达/);assert.equal(posts,1)
+  // Emulate an old build: task remains submitting and the latest retry has only GETs.
+  const folders=await fx.store.list('scene-images');let file,record
+  for(const folder of folders){if(!folder.name.match(/^[a-f0-9]{64}$/))continue;const candidate='scene-images/'+folder.name+'/'+key+'.json';const value=await fx.store.readJson(candidate);if(value){file=candidate;record=value;break}}
+  assert.ok(file)
+  const task={...record.providerTask,state:'submitting'};delete task.rejectionReason
+  const original={...record,providerTask:task}
+  const {createSceneImageDiagnostics,sceneAttemptDiagnostic}=await import('../tavern-plugin/lib/domain/scene-image-diagnostics.js')
+  await createSceneImageDiagnostics(fx.store).record(record.diagnosticContext.chatId,sceneAttemptDiagnostic(record.diagnosticContext.sessionId,original))
+  await fx.store.updateJson(file,r=>({...r,requestId:'legacy-query-only-retry',providerTask:task,outcome:'unconfirmed',providerRequests:[],error:'结果未确认'}))
+  const repaired=await fx.service.status('parent',2)
+  assert.equal(repaired.outcome,'not_requested');assert.equal(posts,1)
+  offline=false
+  await fx.service.start('parent',2,key,{requestId:'explicit-retry-after-start'})
+  await until(async()=>(await fx.service.status('parent',2)).status==='succeeded')
+  assert.equal(posts,2)
+})
