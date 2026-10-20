@@ -157,8 +157,8 @@
 				h("div", { className: "dsh-tavern-resource-body" }, error ? h("div", { className: "dsh-tavern-dock-error" }, error) : null, visible.length ? h(TavernCardList, { place: "library", cards: visible, batch: cardBatch, busy: busy, open: function (item) { loadCard(item.path); }, pin: organization.pin, menu: organization.rowMenu, mention: mentionButton, builtin: function () { return organization.renderCards(function (item) { return h("div", { key: item.path, className: "dsh-tavern-library-card-row" },
 					cardBatch.checkbox(item),
 					h("button", { className: "dsh-tavern-library-card" + (item.hasImage ? " with-image" : "") + (cardBatch.managing && cardBatch.isSelected(item.path) ? " selected" : ""), disabled: busy, onClick: function () { if (cardBatch.managing) cardBatch.toggle(item.path); else loadCard(item.path); } }, h(TavernCardListContent, { card: item, detail: item.path.split("/").pop(), extra: item.script ? "已绑定剧本：" + item.script.title : "" })),
-					!cardBatch.managing ? organization.rowMenu(item) : null,
-					!cardBatch.managing && mentionButton ? mentionButton(item) : null
+					!cardBatch.managing && mentionButton ? mentionButton(item) : null,
+					!cardBatch.managing ? organization.rowMenu(item) : null
 				); }); } }) : h("div", { className: "dsh-tavern-empty" }, cards.length ? "没有匹配的人物卡" : "还没有人物卡"), organization.addCardsFooter() )
 			);
 		}
@@ -245,13 +245,15 @@
 				worldBookCatalogRequestRef.current = request;
 				return request;
 			}
-			React.useEffect(function () {
-				const card = props.view.card;
-				setDraft({
+			function draftFromCard(card) {
+				return {
 					name: card.name || "", tags: (card.tags || []).join(", "), description: card.description || "", personality: card.personality || "", scenario: card.scenario || "",
 					first_mes: card.first_mes || "", alternate_greetings: (card.alternate_greetings || []).join("\n---\n"), mes_example: card.mes_example || "", system_prompt: card.system_prompt || "",
 					post_history_instructions: card.post_history_instructions || "", creator_notes: card.creator_notes || ""
-				});
+				};
+			}
+			React.useEffect(function () {
+				setDraft(draftFromCard(props.view.card));
 			}, [props.view.card]);
 			React.useEffect(function () {
 				setAvailableResources([]); setScriptCatalogLoaded(false); setScriptCatalogLoading(false);
@@ -272,19 +274,23 @@
 				return function () { window.removeEventListener("dsh-tavern-data-changed", onWorldBookDataChanged); };
 			}, [cardPath]);
 			function field(name, value) { setDraft(Object.assign({}, draft, { [name]: value })); }
+			function changedFields() {
+				if (draft.tags === undefined) return {};
+				const next = Object.assign({}, draft, { tags: draft.tags.split(/[,，]/).map(function (x) { return x.trim(); }).filter(Boolean), alternate_greetings: draft.alternate_greetings.split(/\n---+\n/).map(function (x) { return x.trim(); }).filter(Boolean) });
+				const source = props.view.card || {};
+				const baseline = {
+					name: source.name || "", tags: source.tags || [], description: source.description || "", personality: source.personality || "", scenario: source.scenario || "",
+					first_mes: source.first_mes || "", alternate_greetings: source.alternate_greetings || [], mes_example: source.mes_example || "", system_prompt: source.system_prompt || "",
+					post_history_instructions: source.post_history_instructions || "", creator_notes: source.creator_notes || ""
+				};
+				const patch = {};
+				Object.keys(next).forEach(function (key) { if (JSON.stringify(next[key]) !== JSON.stringify(baseline[key])) patch[key] = next[key]; });
+				return patch;
+			}
 			async function save() {
 				setBusy(true); setError("");
 				try {
-					const next = Object.assign({}, draft, { tags: draft.tags.split(/[,，]/).map(function (x) { return x.trim(); }).filter(Boolean), alternate_greetings: draft.alternate_greetings.split(/\n---+\n/).map(function (x) { return x.trim(); }).filter(Boolean) });
-					const source = props.view.card || {};
-					const baseline = {
-						name: source.name || "", tags: source.tags || [], description: source.description || "", personality: source.personality || "", scenario: source.scenario || "",
-						first_mes: source.first_mes || "", alternate_greetings: source.alternate_greetings || [], mes_example: source.mes_example || "", system_prompt: source.system_prompt || "",
-						post_history_instructions: source.post_history_instructions || "", creator_notes: source.creator_notes || ""
-					};
-					const patch = {};
-					Object.keys(next).forEach(function (key) { if (JSON.stringify(next[key]) !== JSON.stringify(baseline[key])) patch[key] = next[key]; });
-					const res = await call("updateCard", { path: cardPath, patch: patch });
+					const res = await call("updateCard", { path: cardPath, patch: changedFields() });
 					props.onSaved(res.card);
 					notifyTavernDataChanged(["cards", "sessions"], "cards");
 				} catch (err) { setError(String(err && err.message || err)); } finally { setBusy(false); }
@@ -356,6 +362,11 @@
 					notifyTavernDataChanged(["worldbooks", "cards"], "cards");
 				} catch (err) { setWorldBookError(String(err && err.message || err)); }
 				finally { setWorldBookBusy(false); }
+			}
+			function detailMenu(label, ariaLabel, items) {
+				return h("details", { className: "dsh-tavern-detail-menu", onBlur: function (event) { if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.open = false; } },
+					h("summary", { className: "dsh-tavern-btn", "aria-label": ariaLabel }, label === "⋯" ? "⋯" : label + " ▾"),
+					h("div", { className: "dsh-tavern-detail-menu-popup", role: "menu", onClick: function (event) { if (event.target.closest("button")) event.currentTarget.closest("details").open = false; } }, items));
 			}
 			function F(name, label, large) {
 				const value = draft[name] || "";
@@ -495,7 +506,10 @@
 					props.onBack ? h("button", { className: "dsh-tavern-btn", onClick: props.onBack }, "← 返回") : null,
 					h("div", { className: props.library ? "dsh-tavern-status-title" : "dsh-tavern-status-role" }, props.view.card.name),
 					h("div", { className: "dsh-tavern-question-sub" }, props.view.card.path ? props.view.card.path.split("/").pop() : ""),
-					props.library ? h("div", { className: "dsh-tavern-library-head-actions" }, props.onAttach ? h("button", { className: "dsh-tavern-btn", onClick: props.onAttach }, "在对话中引用") : null, h("button", { className: "dsh-tavern-btn", onClick: props.onRename }, "重命名"), h("button", { className: "dsh-tavern-btn", onClick: props.onExport, title: "SillyTavern 人物卡 JSON" }, "导出 JSON"), props.onExportCharx ? h("button", { className: "dsh-tavern-btn", onClick: props.onExportCharx, title: "Character Card V3，带头像、立绘、背景等角色素材" }, "导出 CHARX") : null, h("button", { className: "dsh-tavern-btn danger", onClick: props.onDelete }, "删除")) : null
+					// Quote is the main action; exports share one menu and deleting sits behind "⋯".
+					props.library ? h("div", { className: "dsh-tavern-library-head-actions" }, props.onAttach ? h("button", { className: "dsh-tavern-btn dsh-tavern-card-attach", onClick: props.onAttach }, "@ 在对话中引用") : null, h("button", { className: "dsh-tavern-btn", onClick: props.onRename }, "重命名"),
+						detailMenu("导出", "导出", [h("button", { key: "json", type: "button", role: "menuitem", onClick: props.onExport, title: "SillyTavern 人物卡 JSON" }, "导出 JSON"), props.onExportCharx ? h("button", { key: "charx", type: "button", role: "menuitem", onClick: props.onExportCharx, title: "Character Card V3，带头像、立绘、背景等角色素材" }, "导出 CHARX") : null]),
+						detailMenu("⋯", "更多操作", [h("button", { key: "delete", type: "button", role: "menuitem", className: "danger", onClick: props.onDelete }, "删除人物卡")])) : null
 				),
 				props.organizationSettings,
                 props.library ? h(CardLibraryInfoDetails, { key: props.view.card.path, path: props.view.card.path }) : null,
@@ -505,7 +519,11 @@
 					h("details", { className: "dsh-tavern-card-advanced", open: true }, h("summary", null, "基本信息"), F("name", "角色名称"), F("tags", "标签"), F("description", "角色描述", true), F("personality", "性格"), F("scenario", "场景设定"), F("first_mes", "开场白", true), F("alternate_greetings", "备选开场白（--- 分隔）"), F("system_prompt", "系统提示"), F("post_history_instructions", "历史后指令"), F("mes_example", "对话示例", true), F("creator_notes", "创作者备注")),
 					h(TavernLazyDetails, { className: "dsh-tavern-card-advanced", summary: h("summary", null, "扩展内容 · " + extensionCount + " 项"), render: extensionPanel }),
 					error ? h("div", { className: "dsh-card-error" }, error) : null,
-					h("div", { className: "dsh-tavern-card-save" }, h("button", { className: "dsh-card-primary", disabled: busy, onClick: save }, busy ? "保存中…" : "保存字段"))
+					props.library
+						? (Object.keys(changedFields()).length || busy ? h("div", { className: "dsh-tavern-card-save dsh-tavern-card-unsaved", role: "region", "aria-label": "未保存的修改" }, h("span", null, "有未保存的修改"),
+							h("button", { className: "dsh-tavern-btn", disabled: busy, onClick: function () { setDraft(draftFromCard(props.view.card)); } }, "放弃"),
+							h("button", { className: "dsh-card-primary", disabled: busy, onClick: save }, busy ? "保存中…" : "保存")) : null)
+						: h("div", { className: "dsh-tavern-card-save" }, h("button", { className: "dsh-card-primary", disabled: busy, onClick: save }, busy ? "保存中…" : "保存字段"))
 				)
 			);
 		}

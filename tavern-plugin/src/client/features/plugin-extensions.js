@@ -491,7 +491,7 @@
 				imageUrl: card.hasImage ? "/api/dsh-tavern/card-image?path=" + encodeURIComponent(card.path) : "",
 				script: card.script ? { title: card.script.title } : null,
 				summary: card.summary || "", labels: card.labels || [],
-                group: card.group || "", starred: Boolean(card.starred), error: card.readError || ""
+                group: card.group || "", starred: Boolean(card.starred), pinned: Boolean(card.pinned), error: card.readError || ""
 			};
 		}
 
@@ -502,14 +502,16 @@
 			return h("div", { className: "dsh-tavern-card-grid" }, input.cards.map(function (card) {
 				const selected = input.isSelected(card.path);
 				const corner = [input.mention(card.path), input.pin?.(card.path), input.menu(card.path, { hidePin: true })].filter(Boolean);
-				return h("div", { key: card.path, className: "dsh-tavern-card-grid-item" + (selected ? " selected" : "") + (card.error ? " broken" : "") },
+				return h("div", { key: card.path, className: "dsh-tavern-card-grid-item" + (selected ? " selected" : "") + (card.error ? " broken" : "") + (card.pinned ? " pinned" : "") },
 					h("button", { type: "button", className: "dsh-tavern-card-grid-open", title: card.error || card.name, "aria-pressed": input.selecting ? selected : undefined,
 						disabled: input.busy || (!input.selecting && input.place === "play" && Boolean(card.error)), onClick: function () { input.open(card.path); } },
 						card.imageUrl ? h("img", { className: "dsh-tavern-card-grid-cover", src: card.imageUrl, alt: "", loading: "lazy" })
 							: h("span", { className: "dsh-tavern-card-grid-cover placeholder", "aria-hidden": "true" }, Array.from(String(card.name || "").replace(/^[^\p{L}\p{N}]+/u, ""))[0] || "?"),
 						h("span", { className: "dsh-tavern-card-grid-name" }, card.name)),
-                    card.summary ? h("div", { className: "dsh-tavern-card-summary", title: card.summary }, card.summary) : null,
-                    card.labels && card.labels.length ? h("div", { className: "dsh-tavern-card-labels" }, card.labels.map(label => h("span", { key: label }, label))) : null,
+					// Fixed-height caption under the cover keeps every tile in a row the same height.
+					h("div", { className: "dsh-tavern-card-grid-caption" },
+						card.labels && card.labels.length ? h("div", { className: "dsh-tavern-card-labels" }, card.labels.map(label => h("span", { key: label }, label))) : null,
+						card.summary ? h("div", { className: "dsh-tavern-card-summary", title: card.summary }, card.summary) : null),
 					input.selecting ? h("input", { type: "checkbox", className: "dsh-tavern-card-batch-checkbox dsh-tavern-card-grid-check", checked: selected, disabled: input.busy,
 						"aria-label": "选择人物卡：" + card.name, onChange: function () { input.toggle(card.path); } }) : null,
 					corner.length ? h("span", { className: "dsh-tavern-card-grid-corner" }, corner) : null);

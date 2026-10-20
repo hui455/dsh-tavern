@@ -38,5 +38,5 @@ function useLibraryPins(kind, onError) {
       React.createElement('path', { d: 'M8 3h8l-1 7 4 4v2H5v-2l4-4-1-7Z' }),
       React.createElement('path', { d: 'M12 16v6' })) : pinned ? '取消置顶' : '置顶');
   }
-  return { button, order: (items, pathOf = item => item.path) => items.slice().sort((a, b) => Number(pins.includes(pathOf(b))) - Number(pins.includes(pathOf(a)))) };
+  return { button, has: path => pins.includes(path), order: (items, pathOf = item => item.path) => items.slice().sort((a, b) => Number(pins.includes(pathOf(b))) - Number(pins.includes(pathOf(a)))) };
 }
