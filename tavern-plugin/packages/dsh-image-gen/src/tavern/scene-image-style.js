@@ -73,7 +73,7 @@ export function applyImageStyle(plan, style) {
 
 export function composeSceneImagePrompt(plan) {
   const style = plan.styleOverride?.tags ?? plan.style?.tags ?? ''
-  let prompt = (plan.cameraPrompt ? plan.cameraPrompt + '\n' : '') + plan.prompt + (style ? '\nVisual style only (preserve the people, clothing, actions and scene facts above): ' + style : '')
+  let prompt = (plan.cameraPrompt ? plan.cameraPrompt + '\n' : '') + plan.prompt + (style ? '\nVisual style only (apply to medium, brushwork, palette and light; do not add, remove or restate anything above): ' + style : '')
   if (prompt.length > 16000) throw new Error('组合后的画面和风格提示词过长')
   return prompt
 }

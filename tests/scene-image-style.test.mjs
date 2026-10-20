@@ -44,5 +44,5 @@ test('changing global style replaces only style; image-local style remains isola
 
 test('legacy image flags do not rewrite scene or style tags', () => {
   const plan = { prompt: 'portrait, NSFW, garden', style: { tags: 'NSFW, ink' }, omitNsfwLabel: true }
-  assert.equal(composeSceneImagePrompt(plan), 'portrait, NSFW, garden\nVisual style only (preserve the people, clothing, actions and scene facts above): NSFW, ink')
+  assert.equal(composeSceneImagePrompt(plan), 'portrait, NSFW, garden\nVisual style only (apply to medium, brushwork, palette and light; do not add, remove or restate anything above): NSFW, ink')
 })

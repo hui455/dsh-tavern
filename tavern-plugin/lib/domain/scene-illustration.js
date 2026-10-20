@@ -2,6 +2,7 @@ import { postureForContext } from './posture-context.js'
 import { createHash, randomUUID } from 'node:crypto'
 import { projectAgentContent } from './runtime-content-projection.js'
 import { SCENE_EXTRA_SLOTS, sceneSlotKey } from './scene-slots.js'
+import { fallbackExtraScenes } from './scene-extra-scenes.js'
 import { createImageGenerationModule } from '../../packages/dsh-image-gen/src/module.js'
 import { createModuleSceneImageSettings } from './scene-image-module-settings.js'
 import { channelSettings, channelReady, imageExpressionProfile, imageExpressionGuidance } from './scene-image-channels.js'
@@ -402,6 +403,9 @@ export function createSceneIllustrations(deps) {
       if (existing?.recovery === 'save') throw new Error('图片已生成，请先重试保存；不会再次请求图片渠道')
       // Retrying an added picture keeps the user's wish for that scene.
       const sceneRequest = target.slot ? (adding ? addRequest : String(existing?.addRequest || '')) : ''
+      // A deleted picture must not be re-drawn from the plan that produced it: the
+      // round is planned again from the text, with the removed shot as the rejection.
+      const restart = kind === 'generate' && !versionsOf(existing).length && (existing?.deletedVersions?.length || 0) > 0
       const { active, apiKey } = await capture()
       const cardReferences = await deps.cardReferencesForChat?.(chat) || { version: 1, revision: 0, characters: [] }
       if (active.enabled !== true) throw new Error('场景生图未开启：请到 设置 → 场景生图 打开「开启场景生图」')
@@ -439,7 +443,7 @@ export function createSceneIllustrations(deps) {
       } else {
         const snapshot = sceneInput(chat, target, historical)
         const basic = sceneSources(chat, target, snapshot)
-        prepared = await plans.prepare({ chatId: chat.id, target, ...basic, profile, autoStyle: styleWrittenByAgent(active.style), stylePreference: active.style?.custom?.trim() || '', replan: kind === 'replan' })
+        prepared = await plans.prepare({ chatId: chat.id, target, ...basic, profile, autoStyle: styleWrittenByAgent(active.style), stylePreference: active.style?.custom?.trim() || '', replan: kind === 'replan' || restart })
         prepared.input.cardVisualReferences = cardReferences.characters.filter(person => basic.sources.some(source => source.text.includes(person.name)) || prepared.input.characters.some(known => known.name === person.name)).slice(0, 8)
           .map(person => ({ name: person.name, text: (person.text || '').slice(0, 1000), hasImage: Boolean(person.image) }))
         {
@@ -464,10 +468,12 @@ export function createSceneIllustrations(deps) {
         if (references.metadata.available) prepared.input.references = references.metadata
         if (prepared.saved) prepared.saved = await plans.snapshot(chat.id, prepared.saved)
         if (target.slot) prepared.input = { ...prepared.input, addition: await additionInput(chat, base, target, sceneRequest) }
-        if (kind === 'replan') {
+        if (kind === 'replan' || restart) {
           // Rethinking runs in the game's shared Agent: the turn's text is already known there, only the new request is added.
-          const rejected = (versionsOf(existing).find(item => item.id === options.versionId) || versionsOf(existing).at(-1))?.plan
-          prepared.input = { ...prepared.input, rethink: { instruction: '用户否决了这一轮已有的画面，要求重新构思：换一个时刻、动作或构图，不要沿用旧方案；人物外貌照常保持一致。',
+          const rejected = restart ? existing?.plan : (versionsOf(existing).find(item => item.id === options.versionId) || versionsOf(existing).at(-1))?.plan
+          prepared.input = { ...prepared.input, rethink: { instruction: restart
+            ? '上一张图已被删除，这一轮需要重新规划画面：另选时刻或构图，不要照搬被删掉的旧画面；人物外貌照常保持一致。'
+            : '用户否决了这一轮已有的画面，要求重新构思：换一个时刻、动作或构图，不要沿用旧方案；人物外貌照常保持一致。',
             ...(rejected ? { rejected: { description: rejected.description || '', moment: rejected.moment || 'end', composition: rejected.scene?.composition?.text || '' } } : {}) } }
         }
       }
@@ -475,7 +481,7 @@ export function createSceneIllustrations(deps) {
       const targetMessages = (designSnapshot || chat).messages || []
       const targetIndex = targetMessages.findIndex(message => message.role === 'assistant' && Number(message.turn || 1) === target.turn)
       const playerMessage = (targetIndex >= 0 ? targetMessages.slice(0, targetIndex) : []).reverse().find(message => message.role === 'user')
-      if (prepared.input) prepared.input = { ...prepared.input, playerRequest: String(playerMessage?.sourceText || playerMessage?.text || '').slice(0, 2000), camera: { requested: viewpoint, player: chat.playerName || chat.userName || '用户角色', instruction: '单角色控制默认第一人称；必要时补充上帝视角。多角色、阵营或世界控制题材按需采用上帝视角；不得硬把用户画成某个人。手动 requested 优先。' }, ...(sequence ? { sequence: { maxPictures: SCENE_EXTRA_SLOTS + 1, instruction: '先判断本轮是否需要多图。主图之外，仅不同地点、时间、关键动作或有价值的补充视角才提交 additionalScenes；无需补图则空数组。每项以目标正文不同原句为 anchor，不重复同一构图。' } } : {}) }
+      if (prepared.input) prepared.input = { ...prepared.input, playerRequest: String(playerMessage?.sourceText || playerMessage?.text || '').slice(0, 2000), camera: { requested: viewpoint, player: chat.playerName || chat.userName || '用户角色', instruction: '单角色控制默认第一人称；必要时补充上帝视角。多角色、阵营或世界控制题材按需采用上帝视角；不得硬把用户画成某个人。手动 requested 优先。' }, ...(sequence ? { sequence: { maxPictures: SCENE_EXTRA_SLOTS + 1, instruction: '主图之外再判断补图：正文有两个以上可画瞬间、地点或时间变化、连续动作推进、或除主图外还有同等强度的第二幕时，至少提交 1 项 additionalScenes（最多 5），只有一个瞬间才留空。每项 anchor 逐字复制正文原句，不与主图或其他补图重复。' } } : {}) }
       const expressionGuidance = imageExpressionGuidance(active)
       if (providerTask) prepared.saved = existing.plan
       if (prepared.input && expressionGuidance) prepared.input = { ...prepared.input, expressionGuidance }
@@ -511,7 +517,11 @@ export function createSceneIllustrations(deps) {
         const follow = job.promise.then(async () => {
           const first = await readRecord(path)
           if (first?.status !== 'succeeded') return
-          const scenes = first.plan?.additionalScenes || []
+          const planned = first.plan?.additionalScenes || []
+          // A hand-started picture always gets a second shot even when the planner left
+          // additionalScenes empty; automatic drawing stays at one picture per round.
+          const scenes = planned.length ? planned : options.sequenceAuto ? []
+            : fallbackExtraScenes(first.plan, prepared.sources?.find(item => item.id === 'target')?.text || '')
           for (let index = 0; index < scenes.length; index++) {
             if (disposed) break
             const currentConfig = await config()

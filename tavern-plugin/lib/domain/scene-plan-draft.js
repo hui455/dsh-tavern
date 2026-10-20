@@ -11,14 +11,14 @@ export const SCENE_CHARACTER_TOOL = {
     expressions: object(propertiesFor(fields, string(1200))) }, ['id', 'fields'])
 }
 export const SCENE_LAYOUT_TOOL = {
-  name: 'submit_scene_layout', description: '保存当前画面草稿的场景、构图和人物顺序。不会生成图片。',
+  name: 'submit_scene_layout', description: '保存当前画面草稿的场景、构图和人物顺序，并登记主图之外还要画的画面。不会生成图片。additionalScenes 写上补充画面（最多 5 项），不需要就传空数组。',
   parameters: object({ description: string(1000), subjects: { type: 'array', items: string(100), maxItems: 8 },
     continuity: { type: 'string', enum: ['continued', 'changed', 'uncertain'] },
     scene: object(propertiesFor(sceneFields, visual)), expressions: object(propertiesFor(sceneFields, string(1200))),
     moment: { type: 'string', enum: ['end', 'earlier'] },
     viewpoint: { type: 'string', enum: ['first-person', 'omniscient'] },
     viewpointReason: string(300),
-    additionalScenes: { type: 'array', maxItems: 5, items: object({ anchor: string(200), description: string(500), viewpoint: { type: 'string', enum: ['first-person', 'omniscient'] } }, ['anchor', 'description', 'viewpoint']) },
+    additionalScenes: { type: 'array', maxItems: 5, description: '主图之外还要生成的补充画面，按正文顺序；不需要补图就传 []。每项 anchor 必须逐字复制正文原句，description 写这一张的画面，viewpoint 取 first-person 或 omniscient。', items: object({ anchor: string(200), description: string(500), viewpoint: { type: 'string', enum: ['first-person', 'omniscient'] } }, ['anchor', 'description', 'viewpoint']) },
     aspectRatio: { type: 'string', enum: COMFY_ASPECT_RATIOS },
     orientation: { type: 'string', enum: ['portrait', 'landscape', 'square'] },
     negative: string(600), anchor: string(200),

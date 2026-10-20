@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { imageReferenceCapability } from './scene-image-reference.js'
 import { readImageToolArguments } from './scene-plan-draft.js'
+import { statesBareClothing, stripGarmentTags } from './scene-tag-filter.js'
 
 const hash = value => createHash('sha256').update(String(value)).digest('hex')
 const pathFor = chatId => 'scene-images/' + hash(chatId) + '/character-looks.json'
@@ -167,7 +168,9 @@ export function createSceneCharacterLooks({ store, runAgent, selection, generate
       const scene = field => plan.blocks?.find(b => b.owner === 'scene' && b.field === field)?.tags
       plan.prompt = [scene('composition'), ...plan.subjects.map(id => {
         const person = plan.people.find(p => p.id === id)
-        return person.name + ': ' + plan.blocks.filter(b => b.owner === id).map(b => b.tags).filter(Boolean).join(', ')
+        const blocks = plan.blocks.filter(b => b.owner === id)
+        const bare = statesBareClothing(blocks.find(b => b.field === 'clothing')?.tags)
+        return person.name + ': ' + blocks.map(b => b.field === 'appearance' && bare ? stripGarmentTags(b.tags) : b.tags).filter(Boolean).join(', ')
       }), scene('environment')].filter(Boolean).join('\n')
     }
     plan.confirmedLooks = approvals
