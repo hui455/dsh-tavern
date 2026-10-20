@@ -3044,3 +3044,13 @@ textarea.dsh-tavern-prompt-input { resize: vertical; min-height: 120px; }
 .dsh-tavern-status-dashboard .dsh-tavern-guide-add textarea { flex: 1; min-width: 0; min-height: 40px; }
 .dsh-tavern-status-dashboard .dsh-tavern-guide-add .dsh-card-primary { flex: none; }
 .dsh-tavern-status-dashboard .dsh-tavern-card-reload { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+
+/* Phones without a mobile layout bundle (CLI opened in a phone browser): the opened
+   sidebar floats over the story instead of squeezing it into a sliver. */
+@media (max-width: 640px) {
+  body.dsh-tavern-shell-active [data-slot="root"] > [class*="_frame"]:not([data-mobile-nav]):has(> [class*="_sidebarCol"] [class*="_root"]:not([class*="_collapsed"])) { grid-template-columns: 56px minmax(0, 1fr) 0px !important; }
+  body.dsh-tavern-shell-active [data-slot="root"] > [class*="_frame"]:not([data-mobile-nav]) > [class*="_sidebarCol"]:has([class*="_root"]:not([class*="_collapsed"])) { position: fixed; z-index: 60; top: 0; bottom: 0; left: 0; width: min(312px, 86vw); background: var(--dsw-specific-sidebar-fill); box-shadow: 8px 0 32px rgba(0,0,0,.18); }
+  body.dsh-tavern-shell-active [data-slot="root"] > [class*="_frame"]:not([data-mobile-nav]):has(> [class*="_sidebarCol"] [class*="_root"]:not([class*="_collapsed"]))::after { content: ""; position: fixed; z-index: 59; inset: 0; background: rgba(20,18,24,.38); pointer-events: none; }
+  body.dsh-tavern-shell-active [data-slot="root"] > [class*="_frame"]:not([data-mobile-nav]) > [class*="_handle"] { display: none; }
+}
+.dsh-tavern-card-picker .dsh-tavern-card-list-copy > .dsh-tavern-card-summary, .dsh-tavern-card-library .dsh-tavern-card-list-copy > .dsh-tavern-card-summary { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
