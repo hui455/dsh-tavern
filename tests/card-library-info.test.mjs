@@ -69,7 +69,7 @@ test('更多进入详情，编辑和保存位于详情正文，支持取消', as
   const cards = [{ path: 'cards/a.json', name: '测试卡' }]
   const source = await readFile(new URL('../tavern-plugin/src/client/card-organization.js', import.meta.url), 'utf8')
   const context = vm.createContext({ React, document: dom.window.document, useTavernConfirm: () => () => false,
-    useLibraryPins: () => ({ order: items => items, button: () => null }),
+    useLibraryPins: () => ({ order: items => items, has: () => false, button: () => null }),
     askTavernText: async options => { prompt = options }, notifyTavernDataChanged() {},
     rpc: async (method, args) => {
       if (method === 'getCardOrganization') return { groups: [] }

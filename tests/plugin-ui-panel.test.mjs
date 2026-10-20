@@ -86,8 +86,8 @@ test('人物卡列表视图：插件视图拿到筛选后的卡片和动作，�
   const body = boundary.children[0]
   assert.equal(body.type(body.props), 'grid')
   assert.deepEqual(JSON.parse(JSON.stringify(seen.cards)), [
-    { path: 'cards/甲.png', name: '甲', fileName: '甲.png', imageUrl: '/api/dsh-tavern/card-image?path=' + encodeURIComponent('cards/甲.png'), script: { title: '剧本一' }, group: '常玩', starred: true, error: '' },
-    { path: 'cards\\乙.json', name: '乙', fileName: '乙.json', imageUrl: '', script: null, group: '', starred: false, error: '坏了' }])
+    { path: 'cards/甲.png', name: '甲', fileName: '甲.png', imageUrl: '/api/dsh-tavern/card-image?path=' + encodeURIComponent('cards/甲.png'), script: { title: '剧本一' }, summary: '', labels: [], group: '常玩', starred: true, pinned: false, error: '' },
+    { path: 'cards\\乙.json', name: '乙', fileName: '乙.json', imageUrl: '', script: null, summary: '', labels: [], group: '', starred: false, pinned: false, error: '坏了' }])
   assert.equal(seen.selecting, false)
   assert.equal(seen.isSelected('cards/甲.png'), false)
   assert.equal(seen.menu('cards/甲.png'), 'menu:甲')
@@ -116,7 +116,7 @@ test('人物卡列表视图：插件视图拿到筛选后的卡片和动作，�
   assert.deepEqual(tree.children[0].children.map(button => button.children[0]), ['列表', '宫格'])
   assert.equal(tree.children[1], 'builtin')
 
-  // Tavern's own grid: covers and names; a broken card cannot start a game; corner holds @ and ⋯.
+  // Tavern's own grid: cover button, caption below, corner holding @ and ⋯; a broken card cannot start a game.
   stored.set('dsh-tavern-card-list-view', 'dsh-tavern:grid')
   managing = false
   const gridOf = place => { const t = List(props(place)).children[1].children[0]; return t.type(t.props) }
@@ -127,12 +127,13 @@ test('人物卡列表视图：插件视图拿到筛选后的卡片和动作，�
   assert.equal(open.children[0].props.src, '/api/dsh-tavern/card-image?path=' + encodeURIComponent('cards/甲.png'))
   assert.equal(open.children[1].children[0], '甲')
   assert.equal(second.children[0].children[0].children[0], '乙')
-  assert.deepEqual(first.children[2].children, ['@甲', 'menu:甲'])
+  assert.equal(first.children[1].props.className, 'dsh-tavern-card-grid-caption')
+  assert.deepEqual(first.children[3].children, ['@甲', 'menu:甲'])
   open.props.onClick()
   assert.deepEqual(opened.slice(-1), ['cards/甲.png'])
   grid = gridOf('play')
   assert.equal(grid.children[1].children[0].props.disabled, true)
-  assert.equal(grid.children[0].children[2], null)
+  assert.equal(grid.children[0].children[3], null)
 })
 
  test('回合订阅忽略迟到的旧响应，卸载后不再通知', async () => {

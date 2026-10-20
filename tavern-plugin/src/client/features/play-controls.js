@@ -307,6 +307,14 @@
 				: view.cardUpdate.cardChanged && view.cardUpdate.worldbookChanged ? "人物卡和世界书有变化"
 				: view.cardUpdate.cardChanged ? "人物卡有变化"
 				: view.cardUpdate.worldbookChanged ? "世界书有变化" : "";
+			// Reloading is a maintenance action: it leads the panel only when the card or world book changed.
+			const reloadSection = ["story", "script"].includes(view.mode || "story") && view.requestMode !== "sillytavern" && view.cardUpdate ? h("section", { className: "dsh-tavern-status-section" },
+						h("div", { className: "dsh-tavern-card-reload" },
+							h("button", { className: "dsh-tavern-btn" + (cardUpdateNotice ? "" : " quiet"), disabled: running || cardUpdateBusy || !!view.cardUpdate.error || view.settleStatus === "running", onClick: applyUpdatedCard }, cardUpdateBusy ? "正在重新加载人物卡和世界书…" : "重新加载人物卡和世界书"),
+							cardUpdateNotice ? h("span", { className: "dsh-tavern-card-reload-notice", role: "status" }, cardUpdateNotice) : null
+						),
+						cardUpdateError ? h("p", { className: "dsh-card-error", role: "alert" }, "未应用更新：" + cardUpdateError) : null
+					) : null;
 			return h("aside", { className: "dsh-tavern-status dsh-tavern-status-dashboard" },
 				h("div", { className: "dsh-tavern-status-head" },
 					h("div", { className: "dsh-tavern-status-role" }, view.card.name),
@@ -320,13 +328,7 @@
 					h("div", { className: "dsh-tavern-status-body" },
                         h(TavernBackgroundWait, {sessionId:props.sessionId, activity:view.activity}),
                         h(TavernStorageMigration, {key:props.sessionId,sessionId:props.sessionId,busy:running || view.activity?.busy || view.settleStatus === "running"}),
-					["story", "script"].includes(view.mode || "story") && view.requestMode !== "sillytavern" && view.cardUpdate ? h("section", { className: "dsh-tavern-status-section" },
-						h("div", { className: "dsh-tavern-card-reload" },
-							h("button", { className: "dsh-tavern-btn" + (cardUpdateNotice ? "" : " quiet"), disabled: running || cardUpdateBusy || !!view.cardUpdate.error || view.settleStatus === "running", onClick: applyUpdatedCard }, cardUpdateBusy ? "正在重新加载人物卡和世界书…" : "重新加载人物卡和世界书"),
-							cardUpdateNotice ? h("span", { className: "dsh-tavern-card-reload-notice", role: "status" }, cardUpdateNotice) : null
-						),
-						cardUpdateError ? h("p", { className: "dsh-card-error", role: "alert" }, "未应用更新：" + cardUpdateError) : null
-					) : null,
+					cardUpdateNotice ? reloadSection : null,
 					h(TavernCardAppDock, { sessionId: props.sessionId }),
 					view.settleStatus === "error" ? h("div", { className: "dsh-card-error" },
 						h("div", null, view.settleError || "后台结算失败，请重试。"),
@@ -339,6 +341,7 @@
 					(view.presentationWarnings || []).map(function (warning, index) {
 						return h("div", { className: "dsh-card-error", key: "presentation-warning-" + index }, warning);
 					}),
+					cardUpdateNotice ? null : reloadSection,
 					h("details", { className: "dsh-tavern-status-section dsh-tavern-status-support" },
                         h("summary", null, "遇到显示或生成问题？"),
                         h("p", { className: "dsh-tavern-settings-desc" }, "正则加载、前端美化或内容生成异常，可交给卡片 Agent 排查。"),
@@ -351,8 +354,8 @@
                         busy: running || view.activity?.busy || view.regenInProgress
                     }) : null,
 					h("section", { className: "dsh-tavern-status-section dsh-tavern-guide-section" },
-						h("div", { className: "dsh-tavern-status-label" }, "Guide", h("span", { className: "dsh-tavern-guide-caption" }, (view.guides || []).length + " 条")),
-                        h("p", { className: "dsh-tavern-settings-desc" }, "Guide 是本局持续生效的要求，会同时注入前台（正文）和后台（候选、变量结算），可用来引导剧情走向、文风和数值尺度。"),
+						h("div", { className: "dsh-tavern-status-label" }, "Guide", h("span", { className: "dsh-tavern-guide-caption" }, (view.guides || []).length + " 条"), h("button", { type: "button", className: "dsh-tavern-guide-library-link", onClick: () => props.openStyleTab("dsh-tavern:guide-library") }, "Guide 库 ↗")),
+                        h("p", { className: "dsh-tavern-settings-desc" }, "本局持续生效的要求，同时注入正文、候选和变量结算，可引导剧情走向、文风和数值尺度。"),
                         h("details", { className: "dsh-tavern-guide-destinations" },
                             h("summary", null, "长期偏好与人物设定"),
                             h("div", null, "跨游戏通用的个人喜好，可在长期偏好中设置。", h("button", { type: "button", onClick: () => props.openStyleTab("dsh-tavern:user-profile") }, "打开长期偏好 ↗")),
@@ -366,7 +369,6 @@
 							}) : h("div", { className: "dsh-tavern-status-empty" }, "暂无 Guide。添加后用于后续剧情和候选项生成，不再需要时请删除。")
 						),
 						h("div", { className: "dsh-tavern-guide-actions" },
-                            h("button", { type: "button", className: "dsh-tavern-btn", onClick: () => props.openStyleTab("dsh-tavern:guide-library") }, "打开 Guide 库 ↗"),
                             h("button", { type: "button", className: "dsh-tavern-btn", disabled: guideBusy || !(view.guides || []).length, onClick: saveGuideLibrary }, "保存到 Guide 库")),
                         guideNotice ? h("p", { role: "status", className: "dsh-tavern-settings-desc" }, guideNotice) : null,
                         h("div", { className: "dsh-tavern-guide-add" },

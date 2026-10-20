@@ -779,7 +779,7 @@ ctx.tavernUi.registerCardListView({
 | 字段 | 含义 |
 |---|---|
 | `place` | `'library'`（人物卡库）或 `'play'`（开始游玩窗口） |
-| `cards` | 已按搜索和分组筛选、排好序的卡片：`{ path, name, fileName, imageUrl, script, group, starred, error }`。`imageUrl` 没有封面时为空字符串；`script` 是 `{ title }` 或 `null`；`group` 未分组时为空字符串；`error` 是卡片读取失败的原因，正常时为空字符串 |
+| `cards` | 已按搜索和分组筛选、排好序的卡片：`{ path, name, fileName, imageUrl, script, summary, labels, group, starred, pinned, error }`。`imageUrl` 没有封面时为空字符串；`script` 是 `{ title }` 或 `null`；`summary` 是简介，`labels` 是标签数组；`group` 未分组时为空字符串；`pinned` 表示已置顶（置顶的卡排在最前）；`error` 是卡片读取失败的原因，正常时为空字符串 |
 | `busy` | Tavern 正在导入、删除等操作，期间不要让用户点卡 |
 | `selecting` | 是否处于批量管理 |
 | `isSelected(path)` | 批量管理时这张卡是否已选 |

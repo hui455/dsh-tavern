@@ -9,7 +9,10 @@
 				onError: function (event) { event.currentTarget.hidden = true; }
 			}) : React.createElement("span", { className: "dsh-tavern-card-thumb placeholder", "aria-hidden": "true" }, Array.from(String(card && card.name || "?").replace(/^[^\p{L}\p{N}]+/u, ""))[0] || "?");
 			return React.createElement(React.Fragment, null, image, React.createElement("span", { className: "dsh-tavern-card-list-copy" },
-				React.createElement("b", { title: card.name }, card.name),
+				React.createElement("span", { className: "dsh-tavern-card-list-title" },
+					React.createElement("b", { title: card.name }, card.name),
+					card.pinned ? React.createElement("svg", { className: "dsh-tavern-card-pin-mark", role: "img", "aria-label": "已置顶", width: 12, height: 12, viewBox: "0 0 24 24", fill: "currentColor", stroke: "currentColor", strokeWidth: 1.7, strokeLinejoin: "round" }, React.createElement("path", { d: "M8 3h8l-1 7 4 4v2H5v-2l4-4-1-7Z" }), React.createElement("path", { d: "M12 16v6" })) : null,
+					card.group ? React.createElement("span", { className: "dsh-tavern-card-group-chip" }, card.group) : null),
 				props.showPath && card.path ? React.createElement("span", { title: card.path, style: { overflowWrap: "anywhere" } }, "文件：" + String(card.path).replace(/\\/g, "/").split("/").pop()) : null,
 				card.readError || props.detail ? React.createElement("span", { className: card.readError ? "dsh-tavern-dock-error" : undefined }, card.readError || props.detail) : null,
 				props.extra ? React.createElement("span", null, props.extra) : null,

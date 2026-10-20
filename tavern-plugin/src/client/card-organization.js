@@ -144,7 +144,7 @@ function useCardOrganization(cards, busy, refresh, onError, batch, openDetails) 
     });
   }
   const disabled = busy || saving;
-  const visible = pins.order(filterOrganizedCards(cards, filter, deferredQuery));
+  const visible = pins.order(filterOrganizedCards(cards, filter, deferredQuery)).map(card => pins.has(card.path) ? { ...card, pinned: true } : card);
   function options() {
     return [h('option', { key: '', value: 'group:' }, '未分组'), ...groups.map(group => h('option', { key: group, value: 'group:' + group }, group))];
   }
@@ -272,5 +272,12 @@ function useCardOrganization(cards, busy, refresh, onError, batch, openDetails) 
         onChange: event => submit({ action: 'cards', paths: [card.path], group: event.target.value.slice(6) }) }, options())),
       h('button', { className: 'dsh-tavern-btn', disabled, onClick: () => nameGroup() }, '创建分组'));
   }
-  return { visible, toolbar, rowMenu, pin: card => pins.button(card.path, disabled, { icon: true, name: card.name }), detailSettings, addCardsFooter, renderCards: render => visible.map(render) };
+  return { visible, toolbar, rowMenu, pin: card => pins.button(card.path, disabled, { icon: true, name: card.name }), detailSettings, addCardsFooter, renderCards: render => {
+    // Pinned cards already sort first; a heading makes the split visible.
+    const pinnedCount = visible.filter(card => card.pinned).length;
+    if (!pinnedCount || batch.managing) return visible.map(render);
+    const heading = (key, text) => h('div', { key, className: 'dsh-tavern-card-list-heading', role: 'presentation' }, text);
+    return [heading('heading:pinned', '置顶 · ' + pinnedCount), ...visible.slice(0, pinnedCount).map(render),
+      ...(visible.length > pinnedCount ? [heading('heading:rest', '全部 · ' + (visible.length - pinnedCount)), ...visible.slice(pinnedCount).map(render)] : [])];
+  } };
 }
