@@ -465,7 +465,7 @@ export function createSceneIllustrations(deps) {
       const targetMessages = (designSnapshot || chat).messages || []
       const targetIndex = targetMessages.findIndex(message => message.role === 'assistant' && Number(message.turn || 1) === target.turn)
       const playerMessage = (targetIndex >= 0 ? targetMessages.slice(0, targetIndex) : []).reverse().find(message => message.role === 'user')
-      if (prepared.input) prepared.input = { ...prepared.input, playerRequest: String(playerMessage?.sourceText || playerMessage?.text || '').slice(0, 2000), camera: { requested: viewpoint, player: chat.playerName || chat.userName || '用户角色', instruction: '单角色控制默认第一人称；必要时补充上帝视角。多角色、阵营或世界控制题材按需采用上帝视角；不得硬把用户画成某个人。手动 requested 优先。' }, contentPreference: { adultContentEnabled: active.nsfw === true, instruction: '仅控制内容取舍，不要将 NSFW 字样或控制字段写进画面描述。开启不代表要把普通场景成人化。' }, ...(sequence ? { sequence: { maxPictures: SCENE_EXTRA_SLOTS + 1, instruction: '先判断本轮是否需要多图。主图之外，仅不同地点、时间、关键动作或有价值的补充视角才提交 additionalScenes；无需补图则空数组。每项以目标正文不同原句为 anchor，不重复同一构图。' } } : {}) }
+      if (prepared.input) prepared.input = { ...prepared.input, playerRequest: String(playerMessage?.sourceText || playerMessage?.text || '').slice(0, 2000), camera: { requested: viewpoint, player: chat.playerName || chat.userName || '用户角色', instruction: '单角色控制默认第一人称；必要时补充上帝视角。多角色、阵营或世界控制题材按需采用上帝视角；不得硬把用户画成某个人。手动 requested 优先。' }, ...(sequence ? { sequence: { maxPictures: SCENE_EXTRA_SLOTS + 1, instruction: '先判断本轮是否需要多图。主图之外，仅不同地点、时间、关键动作或有价值的补充视角才提交 additionalScenes；无需补图则空数组。每项以目标正文不同原句为 anchor，不重复同一构图。' } } : {}) }
       const expressionGuidance = imageExpressionGuidance(active)
       if (providerTask) prepared.saved = existing.plan
       if (prepared.input && expressionGuidance) prepared.input = { ...prepared.input, expressionGuidance }
@@ -505,7 +505,7 @@ export function createSceneIllustrations(deps) {
           for (let index = 0; index < scenes.length; index++) {
             if (disposed) break
             const currentConfig = await config()
-            if (!currentConfig.enabled || options.sequenceAuto && !currentConfig.auto || currentConfig.nsfw !== active.nsfw) break
+            if (!currentConfig.enabled || options.sequenceAuto && !currentConfig.auto) break
             if (JSON.stringify(channelSettings(currentConfig)) !== JSON.stringify(channelSettings(active))) break
             const current = await deps.chatForSession(sessionId)
             if (!current || sceneTarget(current, turn).key !== base.key) break
@@ -552,16 +552,10 @@ export function createSceneIllustrations(deps) {
       const cardReference = applyCardVisualReferences(lookReferences.plan, input.cardReferences, active)
       plan = cardReference.plan
       const viewpoint = input.viewpoint !== 'auto' ? input.viewpoint : plan.viewpoint || 'first-person'
-      plan = { ...plan, viewpoint, omitNsfwLabel: active.nsfw === true,
+      plan = { ...plan, viewpoint,
         cameraPrompt: record.kind === 'prompt' ? '' : viewpoint === 'first-person' ? "First-person point of view through the player character's eyes. Frame what the player can see; do not show the player as a separate full-body subject." : 'Third-person omniscient establishing viewpoint, showing the scene and spatial relationships from outside.' }
-      if (active.nsfw) {
-        plan.blocks = (plan.blocks || []).map(block => ({ ...block, tags: block.tags?.replace(/\bnsfw\b/gi, '').trim() }))
-        if (plan.style) plan.style = { ...plan.style, tags: plan.style.tags?.replace(/\bnsfw\b/gi, '').trim() }
-        if (plan.styleOverride) plan.styleOverride = { ...plan.styleOverride, tags: plan.styleOverride.tags?.replace(/\bnsfw\b/gi, '').trim() }
-      }
       delete record.pendingCharacters
       plan = applyImageStyle(plan, await input.styleOf(plan))
-      if (active.nsfw && plan.style) plan = { ...plan, style: { ...plan.style, tags: plan.style.tags?.replace(/\bnsfw\b/gi, '').trim() } }
       const prompt = composeSceneImagePrompt(plan)
       record.planId = plan.id
       record.plan = plan
@@ -806,7 +800,7 @@ export function createSceneIllustrations(deps) {
     const timer = setTimeout(() => controller.abort(), deps.timeoutMs || 300000)
     try {
       const profile = imageExpressionProfile(active)
-      const plan = applyImageStyle({ profile, omitNsfwLabel: active.nsfw === true, aspectRatio: aspectRatio || '3:4', description: name + '参考图', subjects: ['person'], people: [{ id: 'person', name }],
+      const plan = applyImageStyle({ profile, aspectRatio: aspectRatio || '3:4', description: name + '参考图', subjects: ['person'], people: [{ id: 'person', name }],
         blocks: [{ owner: 'person', field: 'appearance', text: prompt, tags: prompt }], prompt }, await styles.resolve(active.style, profile))
       const result = await imageQueue.run({ requestId: 'card-reference-' + randomUUID(), signal: controller.signal }, () =>
         imageModule.generate({ ...active, apiKey, plan, prompt: composeSceneImagePrompt(plan), referenceImages: [], signal: controller.signal, maxBytes: Math.min(deps.attachments()?.imageLimits?.maxImageBytes || 8 * 1024 * 1024, 8 * 1024 * 1024) }))

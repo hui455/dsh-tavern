@@ -41,3 +41,8 @@ test('changing global style replaces only style; image-local style remains isola
   assert.match(composeSceneImagePrompt(converted), /analog film texture/)
   assert.throws(() => imageStyleOverride({ text: 'a', tags: '' }, 'mixed-a'), /同时置空/)
 })
+
+test('legacy image flags do not rewrite scene or style tags', () => {
+  const plan = { prompt: 'portrait, NSFW, garden', style: { tags: 'NSFW, ink' }, omitNsfwLabel: true }
+  assert.equal(composeSceneImagePrompt(plan), 'portrait, NSFW, garden\nVisual style only (preserve the people, clothing, actions and scene facts above): NSFW, ink')
+})

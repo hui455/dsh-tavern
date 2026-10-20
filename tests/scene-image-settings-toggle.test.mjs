@@ -94,15 +94,8 @@ test('Comfy UI offers AI auto and all mapped ratios and saves fixed 3:4', async 
   assert.equal(calls.find(call => call.method === 'saveSceneImageSettings').args.aspectRatio, '3:4')
 })
 
-test('NSFW is an independent setting switch and never starts generation', async t => {
-  const { form, calls } = await openTavernSettings(t, { settings, respond(method, args) {
-    if (method === 'saveSceneImageSettings') return { settings: { ...settings, nsfw: args.nsfw === true } }
-  } })
-  const toggle = form.getByRole('switch', { name: 'NSFW 内容', exact: true })
-  assert.equal(await toggle.isChecked(), false)
-  await toggle.click()
-  await form.getByRole('status').filter({ hasText: '已保存生图配置' }).waitFor()
-  assert.equal(await toggle.isChecked(), true)
-  assert.deepEqual(calls.find(item => item.method === 'saveSceneImageSettings').args, { provider: 'openai', nsfw: true })
-  assert.ok(!calls.some(item => /generate|testSceneImageGeneration/i.test(item.method)))
+test('retired content switch is absent even with old settings', async t => {
+  const { form, calls } = await openTavernSettings(t, { settings: { ...settings, nsfw: true } })
+  assert.equal(await form.getByRole('switch', { name: 'NSFW 内容', exact: true }).count(), 0)
+  assert.ok(!calls.some(item => item.method === 'saveSceneImageSettings'))
 })

@@ -623,22 +623,22 @@ for (const failSecond of [false, true]) test('scene sequence generates distinct 
   fx.chat().messages[1].sourceText = '她站在窗边看雨。她走到花园。雨停了。'
   fx.chat().messages[1].swipes[0] = fx.chat().messages[1].sourceText
   await fx.service.configure({ auto: true, nsfw: true })
-  assert.equal((await fx.service.settings()).nsfw, true)
-  await assert.rejects(fx.service.configure({ nsfw: 'yes' }), /布尔/)
+  assert.equal(Object.hasOwn(await fx.service.settings(), 'nsfw'), false)
+  await fx.service.configure({ nsfw: 'yes' }) // Retired clients cannot reintroduce the preference.
   const state = await fx.service.autoGenerate('parent')
   await until(async () => { const s = await fx.service.status('parent', 2); return !s.sequenceRunning && s.extras.length && s })
   assert.equal(requests.length, failSecond ? 2 : 3)
   assert.equal(inputs[0].sequence.maxPictures, 6)
-  assert.equal(inputs[0].contentPreference.adultContentEnabled, true)
+  assert.equal(Object.hasOwn(inputs[0], 'contentPreference'), false)
   assert.match(requests[0].prompt, /First-person/)
   assert.match(requests[1].prompt, /omniscient/)
-  assert.ok(requests.every(input => !/\bnsfw\b/i.test(input.prompt)))
+  assert.ok(requests.every(input => /\bnsfw\b/i.test(input.prompt)))
   const done = await fx.service.status('parent', 2)
   assert.equal(done.extras[0].status, failSecond ? 'failed' : 'succeeded')
   await fx.service.autoGenerate('parent')
   assert.equal(requests.length, failSecond ? 2 : 3)
   const restarted = fx.createService()
-  assert.equal((await restarted.settings()).nsfw, true)
+  assert.equal(Object.hasOwn(await restarted.settings(), 'nsfw'), false)
   assert.equal(await restarted.autoGenerate('parent'), null)
 })
 
@@ -657,4 +657,19 @@ test('manual extra image viewpoint reaches planner and overrides its camera choi
   assert.equal(inputs[1].sequence, undefined)
   assert.match(requests[1].prompt, /omniscient/)
   await assert.rejects(fx.service.start('parent', 2, key, { kind: 'add', viewpoint: 'invalid' }), /视角/)
+})
+
+for (const nsfw of [false, true]) test('retired persisted content preference is ignored and removed on save: ' + nsfw, async t => {
+  const fx = await fixture(t)
+  const path = 'scene-images/settings.json'
+  await fx.store.updateJson(path, value => ({ ...value, nsfw }))
+  const before = await fx.service.settings()
+  assert.equal(Object.hasOwn(before, 'nsfw'), false)
+  await fx.service.configure({ auto: true, nsfw: !nsfw })
+  const saved = await fx.store.readJson(path)
+  assert.equal(Object.hasOwn(saved, 'nsfw'), false)
+  assert.equal(saved.auto, true)
+  assert.equal(saved.enabled, before.enabled)
+  assert.equal(saved.provider, before.provider)
+  assert.equal(fx.imageCalls(), 0)
 })

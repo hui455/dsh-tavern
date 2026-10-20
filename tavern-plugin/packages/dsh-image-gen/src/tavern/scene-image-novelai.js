@@ -287,8 +287,7 @@ export function novelaiPrompts(input, config = {}, { withArtist = true } = {}) {
   if (characters.some(person => !person.caption)) throw new Error('NovelAI 人物方案缺少人物描述')
   const style = plan.styleOverride?.tags ?? plan.style?.tags ?? ''
   const scene = [plan.cameraPrompt, ...plan.blocks.filter(block => block.owner === 'scene' && block.tags).map(block => block.tags)].filter(Boolean).join(', ')
-  const rawBase = assembleBase({ quality: artist.quality, scene, style, artist: artist.prompt }, config)
-  const base = plan.omitNsfwLabel ? rawBase.replace(/\bnsfw\b/gi, '').replace(/,\s*,/g, ',').trim() : rawBase
+  const base = assembleBase({ quality: artist.quality, scene, style, artist: artist.prompt }, config)
   if (!base.trim() && !characters.length) throw new Error('NovelAI 画面提示词为空')
   if (base.length + characters.reduce((sum, person) => sum + person.caption.length, 0) > 16000) throw new Error('NovelAI 组合提示词过长')
   return { base: base || characters.length + ' people', characters }

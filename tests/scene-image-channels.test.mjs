@@ -43,11 +43,11 @@ test('WebUI sends one image request, keeps the server model and handles raw base
   await assert.rejects(generateSceneImage({ ...input, authType: 'basic', username: 'reader' }), /配置/)
 })
 
-test('enabled content preference removes NSFW labels from actual positive and negative request fields', async () => {
+test('retired content preference preserves original positive and negative request fields', async () => {
   let sent
   await generateSceneImage({ provider: 'webui', baseURL: 'http://localhost:7860', size: '512x512', prompt: 'portrait, NSFW, garden', negativePrompt: 'nsfw, blur', plan: { omitNsfwLabel: true, negative: 'NSFW, watermark' } }, { fetch: async (_url, init) => { sent = JSON.parse(init.body); return Response.json({ images: [png.toString('base64')] }) } })
-  assert.doesNotMatch(sent.prompt, /nsfw/i)
-  assert.doesNotMatch(sent.negative_prompt, /nsfw/i)
+  assert.match(sent.prompt, /nsfw/i)
+  assert.match(sent.negative_prompt, /nsfw/i)
   assert.match(sent.prompt, /portrait.*garden/)
   assert.match(sent.negative_prompt, /blur/)
 })

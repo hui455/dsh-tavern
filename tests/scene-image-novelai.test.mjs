@@ -162,3 +162,10 @@ test('NovelAI chat-protocol custom endpoints send the field template and read th
   await assert.rejects(generateSceneImage({ ...config, plan, prompt: 'x' }, { fetch: async () => new Response(JSON.stringify({ choices: [{ message: { content: '余额不足' } }] })) }), /该接口没有返回图片链接：余额不足/)
   assert.throws(() => imageChannelRequest({ ...config, endpoints: [{ ...endpoints[0], protocol: 'other' }], plan }), /接口格式/)
 })
+
+test('NovelAI preserves scene and style tags on legacy image plans', () => {
+  const config = channelSettings({ provider: 'novelai' })
+  const old = { ...plan, omitNsfwLabel: true, style: { tags: 'NSFW, watercolor' } }
+  assert.match(novelaiPrompts({ ...input, plan: old }, config).base, /NSFW/)
+})
+

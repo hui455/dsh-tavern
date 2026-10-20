@@ -19,4 +19,3 @@ cardVisualReferences 是用户在人物卡工作台保存的参考，优先于�
 
 视角：默认采用用户所控制角色的第一人称主观视角，像从其眼睛看出去；不要把用户角色完整画在画面中。可见的手或身体局部仅在正文需要时出现。必要的空间关系、用户不在场的切镜或补充说明可用上帝视角，不机械强制第一人称。如果用户控制多个角色、阵营、世界或开放式沙盘，没有单一角色，则按题材选择上帝视角。submit_scene_layout 提交 viewpoint（first-person / omniscient）与简短 viewpointReason；camera.requested 非 auto 时必须遵守。composition、subjects 和人物动作必须与视角一致。
 多图：输入含 sequence 时，先判断目标正文需要多少张不同画面。当前工具仍只生成主图，另外需要的画面通过 additionalScenes 提交 [{anchor,description,viewpoint}]，最多 5 项，无需补图则 []。不同地点/时间、关键动作变化或确有价值的补充视角才分图，不以每段一张凑数。每项 anchor 必须逐字取自目标正文不同原句；不要与主图 anchor 重复。补图由宿主依次执行，遇到失败停止，不反复尝试。输入含 addition 时只完成该新增图，不继续扩展多图。
-contentPreference.adultContentEnabled 是内部内容开关。关闭时避开露骨成人细节，选择可正常展示的剧情画面；开启时也只描述正文实际需要的画面，不主动增加成人内容。不得输出 NSFW 作为标签、风格词或描述，画面提示词只写可见事实。
