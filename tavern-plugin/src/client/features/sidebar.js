@@ -949,7 +949,7 @@
 					h("button", { className: "dsh-tavern-btn", disabled: busy, onClick: function () { setChatImport(null); setError(""); } }, "返回"),
 					h("button", { className: "dsh-tavern-question-primary", disabled: busy || Boolean(pendingOpen) || (chatImport.preview.incompatible && !chatImport.textOnly), onClick: importConversation }, busy ? "正在导入…" : "导入并打开"))) : null;
 			const openingChoice = openingPicker ? h(React.Fragment, null,
-				h("div", { className: "dsh-tavern-card-picker-head" }, h("button", { className: "dsh-tavern-btn", disabled: busy, onClick: discardOpening }, "放弃开局"), h("span", null, openingPicker.card.name + " · 游戏准备"), h("button", { className: "dsh-tavern-btn", "aria-expanded": !openingSettingsCollapsed, onClick: function () { openingSettingsManual.current = true; setOpeningSettingsCollapsed(function (value) { return !value; }); } }, openingSettingsCollapsed ? "展开设置" : "折叠设置"), h("span", { className: "dsh-tavern-spacer" }), h("button", { className: "dsh-tavern-btn", disabled: busy, onClick: closePicker }, "暂时收起")),
+				h("div", { className: "dsh-tavern-card-picker-head dsh-tavern-opening-head" }, h("span", { className: "dsh-tavern-opening-title" }, h("b", null, openingPicker.card.name), h("small", null, "游戏准备")), h("span", { className: "dsh-tavern-spacer" }), h("button", { className: "dsh-tavern-btn dsh-tavern-quiet-btn", "aria-expanded": !openingSettingsCollapsed, onClick: function () { openingSettingsManual.current = true; setOpeningSettingsCollapsed(function (value) { return !value; }); } }, openingSettingsCollapsed ? "展开设置" : "折叠设置"), h("button", { className: "dsh-tavern-btn dsh-tavern-quiet-btn", disabled: busy, onClick: closePicker }, "暂时收起")),
 				busy ? h("div", { className: "dsh-tavern-session-switching", role: "status", "aria-live": "polite" }, openingPicker.preparing ? "正在准备开场与脚本资源…" : "正在完成游戏初始化…", openingPicker.preparing ? h("div", { style: { marginTop: "8px", fontSize: "13px", opacity: .75 } }, "首次打开可能需要下载资源，请稍候；后续打开通常更快。") : null) : null,
 					selectedOpening ? h("div", { hidden: openingSettingsCollapsed },
 						h("label", { className: "dsh-tavern-player-name" }, h("span", null, "故事中的玩家称呼（可选）"), h("input", { value: openingPicker.userName ?? "", maxLength: 80, placeholder: "你", disabled: busy, onChange: function (event) { const userName = event.target.value; setOpeningPicker(function (current) { return current ? Object.assign({}, current, { userName: userName }) : current; }); } })),
@@ -984,7 +984,7 @@
 					},
 					trustedCardMode: openingPicker.trustedCardMode
 				})) : null,
-				h("div", { className: "dsh-tavern-picker-foot", style: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: "24px", flexWrap: "wrap" } }, h("input", { ref: chatImportFile, type: "file", accept: ".jsonl", style: { display: "none" }, onChange: function (event) { previewChatImport(event.target.files && event.target.files[0]); event.target.value = ""; } }), h("div", { style: { display: "flex", flexDirection: "column", alignItems: "flex-start", gap: "6px" } }, h("button", { className: "dsh-tavern-btn", disabled: busy, onClick: function () { chatImportFile.current.click(); } }, "导入 SillyTavern 聊天记录"), h("small", { style: { opacity: .7 } }, "（必须和人物卡匹配）")), h("button", { className: "dsh-tavern-question-primary", disabled: busy || openingPicker.preparing || (openingPicker.openings.length > 0 && !selectedOpening), onClick: function () { newConversation(openingPicker.card, null, selectedOpening ? selectedOpening.id : "", openingPicker.userName || "你"); } }, "开始新游戏"))
+				h("div", { className: "dsh-tavern-picker-foot dsh-tavern-opening-foot" }, h("input", { ref: chatImportFile, type: "file", accept: ".jsonl", style: { display: "none" } , onChange: function (event) { previewChatImport(event.target.files && event.target.files[0]); event.target.value = ""; } }), h("button", { className: "dsh-tavern-btn danger", disabled: busy, onClick: discardOpening }, "放弃开局"), h("button", { className: "dsh-tavern-btn", disabled: busy, title: "必须和人物卡匹配", onClick: function () { chatImportFile.current.click(); } }, "导入 SillyTavern 聊天记录"), h("span", { className: "dsh-tavern-spacer" }), h("button", { className: "dsh-tavern-question-primary", disabled: busy || openingPicker.preparing || (openingPicker.openings.length > 0 && !selectedOpening), onClick: function () { newConversation(openingPicker.card, null, selectedOpening ? selectedOpening.id : "", openingPicker.userName || "你"); } }, "开始新游戏"))
 			) : null;
 			const playPicker = h("div", { ref: openingLayoutRef, className: "dsh-tavern-card-picker" + (openingPicker ? "" : " selecting"), role: "dialog", "aria-modal": "true", "aria-label": openingPicker ? "游戏准备" : "选择人物卡开始游玩" }, pickerError, openingPicker ? h(React.Fragment, null, importChoice, h("div", { style: { display: importChoice ? "none" : "contents" } }, openingChoice)) : h(React.Fragment, null,
 				h("div", { className: "dsh-tavern-card-picker-head" }, h("span", null, "选择人物卡 · 开始游玩"), h("span", { className: "dsh-tavern-spacer" }), h("button", { className: "dsh-tavern-picker-close", "aria-label": "关闭", title: "关闭", onClick: closePicker }, h("svg", { width: 16, height: 16, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round", "aria-hidden": true }, h("path", { d: "M6 6l12 12M18 6L6 18" })))),
@@ -1062,19 +1062,28 @@
 				: (cardEntry === "writing-skill" || cardEntry === "extract"
 					? h("button", { className: "dsh-tavern-btn", disabled: busy, onClick: function () { startInitialImport("source"); } }, "导入剧本或素材")
 					: null);
+			function startTask(icon, title, detail, run) {
+				return h("button", { className: "dsh-tavern-card-pick dsh-tavern-task-pick", disabled: busy, onClick: run },
+					h("span", { className: "dsh-tavern-task-icon", "aria-hidden": "true" }, h("svg", { width: 16, height: 16, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round", strokeLinejoin: "round" }, h("path", { d: icon }))),
+					h("span", { className: "dsh-tavern-task-copy" }, h("b", null, title), h("span", null, detail)));
+			}
 			const cardPicker = h("div", { className: "dsh-tavern-card-picker", role: "dialog", "aria-modal": "true", "aria-label": "选择卡片工作台起始任务" }, pickerError,
 				h("div", { className: "dsh-tavern-card-picker-head" }, cardEntry ? h("button", { className: "dsh-tavern-btn", onClick: function () { setCardEntry(""); } }, "← 返回") : h("span", null, "选择起始任务"), cardEntry === "writing-skill" ? h("span", null, "选择参考素材（至少 1 份）") : cardEntry === "extract" ? h("span", null, "选择初始剧本（至少 1 份）") : cardEntry === "mvu" ? h("span", null, "选择要转换的人物卡") : cardEntry === "resource-edit" ? h("span", null, "选择一个编辑目标") : null, h("span", { className: "dsh-tavern-spacer" }), cardEntry === "edit" || cardEntry === "gentle" || cardEntry === "mvu" ? h(MobileCardImportButton, { inputRef: fileRef, disabled: busy, onImported: async function () { await refresh(); notifyDataChanged(["cards"]); } }) : null, initialImportButtons, h("button", { className: "dsh-tavern-btn", onClick: closePicker }, "关闭")),
 				h("input", { ref: fileRef, type: "file", accept: ".png,.json,.charx,.dshcard", style: { display: "none" }, onChange: function (e) { const f = e.target.files && e.target.files[0]; if (f) importCard(f); e.target.value = ""; } }),
 				h("input", { ref: initialImportRef, type: "file", accept: ".txt,.md,.json,.epub,text/plain,text/markdown,application/json,application/epub+zip", style: { display: "none" }, onChange: function (e) { const f = e.target.files && e.target.files[0]; if (f) importInitialResource(f, initialImportKindRef.current); e.target.value = ""; } }),
 					(cardEntry === "edit" || cardEntry === "gentle") ? cardEditRows : cardEntry === "mvu" ? cardMvuRows : cardEntry === "writing-skill" || cardEntry === "extract" || cardEntry === "resource-edit" ? initialResourcePicker : h(React.Fragment, null,
-						h("button", { className: "dsh-tavern-card-pick", disabled: busy, onClick: function () { newCardConversation(null, "create", "新建人物卡"); } }, h("b", null, "新建人物卡"), h("span", null, "逐题问答确定角色与开场，可选 MVU 变量和前端美化，先看草图再建卡")),
-						h("button", { className: "dsh-tavern-card-pick", disabled: busy, onClick: function () { setCardEntry("edit"); } }, h("b", null, "修改人物卡"), h("span", null, "先选择人物卡，再追加修改任务提示词")),
-						h("button", { className: "dsh-tavern-card-pick", disabled: busy, onClick: function () { setCardEntry("gentle"); } }, h("b", null, "人物卡温和改写"), h("span", null, "人物卡被模型拒绝输出时，适当改写为温和版本，减少拒绝并实测效果")),
-						h("button", { className: "dsh-tavern-card-pick", disabled: busy, onClick: function () { setCardEntry("mvu"); } }, h("b", null, "把人物卡转成 MVU 版"), h("span", null, "转换为 MVU 后，状态栏绝对不会掉格式")),
-						h("button", { className: "dsh-tavern-card-pick", disabled: busy, onClick: function () { openResourcePicker("writing-skill"); } }, h("b", null, "创建写作 Skill"), h("span", null, "从素材中提炼写作提示词，明确适用与禁用场景，用于前台正文写作")),
-						h("button", { className: "dsh-tavern-card-pick", disabled: busy, onClick: function () { openResourcePicker("extract"); } }, h("b", null, "从剧本新建人物卡"), h("span", null, "先选择至少一份剧本，再进入工作台")),
-						h("button", { className: "dsh-tavern-card-pick", disabled: busy, onClick: function () { openResourcePicker("resource-edit"); } }, h("b", null, "修改剧本 / 世界书 / 预设"), h("span", null, "先选择一个目标，再进入工作台修改")),
-					h("button", { className: "dsh-tavern-card-pick", disabled: busy, onClick: function () { newCardConversation(null); } }, h("b", null, "空白开始"), h("span", null, "不追加任务提示词，自由使用完整卡片 Agent"))
+						h("div", { className: "dsh-tavern-task-group-title" }, "人物卡"),
+						h("div", { className: "dsh-tavern-task-grid" },
+							startTask("M12 5v14M5 12h14", "新建人物卡", "逐题问答确定角色与开场，可选 MVU 变量和前端美化，先看草图再建卡", function () { newCardConversation(null, "create", "新建人物卡"); }),
+							startTask("M4 20h4L19 9l-4-4L4 16z", "修改人物卡", "先选择人物卡，再追加修改任务提示词", function () { setCardEntry("edit"); }),
+							startTask("M12 20s-7-4.5-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.5-7 10-7 10z", "人物卡温和改写", "人物卡被模型拒绝输出时，适当改写为温和版本，减少拒绝并实测效果", function () { setCardEntry("gentle"); }),
+							startTask("M4 6h16M4 12h16M4 18h10", "把人物卡转成 MVU 版", "转换为 MVU 后，状态栏绝对不会掉格式", function () { setCardEntry("mvu"); }),
+							startTask("M6 3h9l4 4v14H6zM14 3v5h5", "从剧本新建人物卡", "先选择至少一份剧本，再进入工作台", function () { openResourcePicker("extract"); })),
+						h("div", { className: "dsh-tavern-task-group-title" }, "其他"),
+						h("div", { className: "dsh-tavern-task-grid" },
+							startTask("M4 19l4-1 11-11-3-3L5 15zM14 6l3 3", "创建写作 Skill", "从素材中提炼写作提示词，明确适用与禁用场景，用于前台正文写作", function () { openResourcePicker("writing-skill"); }),
+							startTask("M4 5h7v14H4zM13 5h7v14h-7z", "修改剧本 / 世界书 / 预设", "先选择一个目标，再进入工作台修改", function () { openResourcePicker("resource-edit"); }),
+							startTask("M5 5h14v14H5z", "空白开始", "不追加任务提示词，自由使用完整卡片 Agent", function () { newCardConversation(null); }))
 				)
 			);
 			const updateMessage = updateStatus.phase === "package-managed"

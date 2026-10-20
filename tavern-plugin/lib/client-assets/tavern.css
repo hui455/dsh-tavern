@@ -3003,3 +3003,25 @@ textarea.dsh-tavern-prompt-input { resize: vertical; min-height: 120px; }
 :is(.dsh-tavern-library, .dsh-tavern-status) .dsh-tavern-btn.dsh-tavern-card-attach { border-color: var(--dsh-tavern-accent-border); background: var(--dsh-tavern-accent-soft); color: var(--dsh-tavern-accent); font-weight: 600; }
 .dsh-tavern-card-save.dsh-tavern-card-unsaved { position: sticky; bottom: 0; z-index: 3; display: flex; align-items: center; gap: 8px; margin: 12px -16px 0; padding: 10px 16px; border-top: 1px solid var(--dsh-tavern-accent-border); background: color-mix(in srgb, var(--dsh-tavern-accent) 7%, var(--dsw-specific-sidebar-fill)); }
 .dsh-tavern-card-unsaved > span { flex: 1; color: var(--dsh-tavern-accent); font-size: 13px; }
+
+/* Game preparation: title on the left, quiet controls on the right, discard in the footer. */
+.dsh-tavern-opening-title { display: flex; flex-direction: column; min-width: 0; line-height: 1.3; }
+.dsh-tavern-opening-title > b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; font-weight: 650; }
+.dsh-tavern-opening-title > small { color: var(--dsw-alias-label-tertiary, var(--dsw-alias-label-secondary)); font-size: 12px; font-weight: 400; }
+.dsh-tavern-card-picker .dsh-tavern-btn.dsh-tavern-quiet-btn { border-color: transparent; background: transparent; color: var(--dsw-alias-label-secondary); }
+.dsh-tavern-card-picker .dsh-tavern-btn.dsh-tavern-quiet-btn:hover:not(:disabled) { border-color: transparent; background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
+.dsh-tavern-opening-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.dsh-tavern-card-picker .dsh-tavern-opening-foot .dsh-tavern-question-primary { height: 36px; padding: 0 20px; font-size: 14px; }
+
+/* Card workbench start tasks: two columns in two groups, each with an icon. */
+.dsh-tavern-task-group-title { margin: 12px 2px 8px; color: var(--dsw-alias-label-tertiary, var(--dsw-alias-label-secondary)); font-size: 12px; font-weight: 600; }
+.dsh-tavern-card-picker-head + .dsh-tavern-task-group-title, .dsh-tavern-card-picker > input + input + .dsh-tavern-task-group-title { margin-top: 4px; }
+.dsh-tavern-task-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.dsh-tavern-card-picker .dsh-tavern-card-pick.dsh-tavern-task-pick { display: flex; align-items: flex-start; gap: 12px; margin: 0; min-height: 64px; padding: 11px 12px; }
+.dsh-tavern-card-picker .dsh-tavern-task-pick:hover:not(:disabled) { border-color: var(--dsh-tavern-accent-border); background: var(--dsw-specific-input-major); }
+.dsh-tavern-card-pick.dsh-tavern-task-pick > .dsh-tavern-task-icon { display: grid; place-items: center; flex: none; width: 32px; height: 32px; margin: 0; border-radius: 9px; background: var(--dsh-tavern-accent-soft); color: var(--dsh-tavern-accent); }
+.dsh-tavern-card-pick.dsh-tavern-task-pick > .dsh-tavern-task-copy { display: block; min-width: 0; margin: 0; }
+.dsh-tavern-card-picker .dsh-tavern-task-pick .dsh-tavern-task-copy > b { color: var(--dsw-alias-label-primary); font-size: 14px; }
+.dsh-tavern-card-picker .dsh-tavern-task-pick:hover:not(:disabled) .dsh-tavern-task-copy > b { color: var(--dsw-alias-label-primary); }
+.dsh-tavern-card-pick.dsh-tavern-task-pick .dsh-tavern-task-copy > span { margin-top: 3px; font-size: 12px; line-height: 1.5; color: var(--dsw-alias-label-secondary); }
+@media (max-width: 640px) { .dsh-tavern-task-grid { grid-template-columns: minmax(0, 1fr); } }
