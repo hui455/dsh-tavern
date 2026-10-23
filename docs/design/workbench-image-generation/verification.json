@@ -1,0 +1,18 @@
+{
+  "screenshots": [
+    "desktop-light-before.png",
+    "mobile-light-before.png",
+    "desktop-light-after.png",
+    "mobile-light-after.png",
+    "desktop-dark-before.png",
+    "mobile-dark-before.png",
+    "desktop-dark-after.png",
+    "mobile-dark-after.png",
+    "desktop-abyss-after.png",
+    "mobile-abyss-after.png"
+  ],
+  "checks": [
+    "Clicking free-image entry creates an operable blank workbench with generation draft",
+    "Composer accepts user image description"
+  ]
+}

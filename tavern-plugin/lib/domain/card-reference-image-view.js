@@ -15,7 +15,7 @@ function createCardReferenceImageDefinition() {
       const state = context.state, event = match.event, data = event.data
       if (event.type === 'assistant/message') return { ...state, answerSeq: event.seq }
       if (event.type === 'turn/end') return { ...state, endSeq: event.seq }
-      if (event.type === 'tool/call' && data.name === 'tavern_character_reference') return { ...state, calls: [...state.calls, data.callId] }
+      if (event.type === 'tool/call' && ['tavern_character_reference', 'tavern_generate_image'].includes(data.name)) return { ...state, calls: [...state.calls, data.callId] }
       if (event.type !== 'tool/result') return state
       const images = [...state.images]
       for (const result of data.message?.content || []) {

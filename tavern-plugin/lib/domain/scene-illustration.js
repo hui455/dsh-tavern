@@ -807,10 +807,14 @@ export function createSceneIllustrations(deps) {
     if (!version?.attachment) throw new Error('图片尚未就绪或已删除')
     return deps.attachments().readImage(version.attachment)
   }
-  // An explicit, paid check of the saved channel: one fixed picture, shown
-  // once and never kept. It waits in the same queue as story pictures.
-  async function generateCardReference({ name, prompt, aspectRatio, signal }) {
-    if (typeof name !== 'string' || !name.trim() || name.length > 100 || typeof prompt !== 'string' || !prompt.trim() || prompt.length > 12000) throw new Error('请提供人物名称和完整生图描述（最多 12000 字符）')
+  // Both workbench tools use the saved channel, shared queue and durable attachments.
+  async function generateCardReference(input) {
+    if (typeof input.name !== 'string' || !input.name.trim() || input.name.length > 100) throw new Error('请提供人物名称和完整生图描述（最多 12000 字符）')
+    return generateWorkbenchImage(input)
+  }
+  async function generateWorkbenchImage({ name, prompt, aspectRatio, signal }) {
+    if (typeof prompt !== 'string' || !prompt.trim() || prompt.length > 12000) throw new Error('请提供完整生图描述（最多 12000 字符）')
+    if (aspectRatio !== undefined && !['1:1', '2:3', '3:2', '3:4', '4:3', '9:16', '16:9', '21:9'].includes(aspectRatio)) throw new Error('不支持的生图比例')
     const { active, apiKey } = await capture()
     if (!active.enabled || !channelReady(active, apiKey)) throw new Error('请先开启并配置场景生图')
     const controller = new AbortController()
@@ -820,11 +824,16 @@ export function createSceneIllustrations(deps) {
     const timer = setTimeout(() => controller.abort(), deps.timeoutMs || 300000)
     try {
       const profile = imageExpressionProfile(active)
-      const plan = applyImageStyle({ profile, aspectRatio: aspectRatio || '3:4', description: name + '参考图', subjects: ['person'], people: [{ id: 'person', name }],
-        blocks: [{ owner: 'person', field: 'appearance', text: prompt, tags: prompt }], prompt }, await styles.resolve(active.style, profile))
+      // Workbench requests have no style-planning Agent: use the user's
+      // preference verbatim in both auto and locked modes, never a built-in style.
+      const preference = active.style?.custom?.trim() || ''
+      const artStyle = preference ? { text: preference, tags: preference } : undefined
+      const plan = applyImageStyle({ profile, aspectRatio: aspectRatio || (name ? '3:4' : '1:1'), description: name ? name + '参考图' : '自由生图',
+        subjects: name ? ['person'] : [], people: name ? [{ id: 'person', name }] : [],
+        blocks: [{ owner: name ? 'person' : 'scene', field: name ? 'appearance' : 'environment', text: prompt, tags: prompt }], prompt }, await styles.resolve(active.style, profile, artStyle))
       const result = await imageQueue.run({ requestId: 'card-reference-' + randomUUID(), signal: controller.signal }, () =>
         imageModule.generate({ ...active, apiKey, plan, prompt: composeSceneImagePrompt(plan), referenceImages: [], signal: controller.signal, maxBytes: Math.min(deps.attachments()?.imageLimits?.maxImageBytes || 8 * 1024 * 1024, 8 * 1024 * 1024) }))
-      const attachment = result.attachment || await deps.attachments().saveImage({ data: result.data, mediaType: result.mediaType, name: name + '-reference' })
+      const attachment = result.attachment || await deps.attachments().saveImage({ data: result.data, mediaType: result.mediaType, name: name ? name + '-reference' : 'workbench-image' })
       return { attachment, provider: active.provider, model: active.model }
     } catch (error) {
       throw new Error(redactImageError(error.message, apiKey) + '；不要自动重复请求生图，请先告知用户本次结果。')
@@ -977,7 +986,7 @@ export function createSceneIllustrations(deps) {
     if (!(record.plan.subjects || []).includes(input.personId)) throw new Error('人物不属于当前画面')
     return characterLooks.image(chat.id, input.personId, input.candidateId)
   }
-  return { settings, configure, generateCardReference, looks, changeLook, readLookImage, readArtistPreview: setup.readArtistPreview, testConnection: connection.test, listModels: connection.models, testGenerate, status, start, autoGenerate, cancel, retrySave, readImage, exportImages, isAgentSession, undoAgentTurn, removeImage, setReference, history, readStoredImage, removeStoredImages,
+  return { settings, configure, generateCardReference, generateWorkbenchImage, looks, changeLook, readLookImage, readArtistPreview: setup.readArtistPreview, testConnection: connection.test, listModels: connection.models, testGenerate, status, start, autoGenerate, cancel, retrySave, readImage, exportImages, isAgentSession, undoAgentTurn, removeImage, setReference, history, readStoredImage, removeStoredImages,
     async dispose() { disposed = true; for (const job of jobs.values()) job.controller.abort(); await Promise.allSettled([...jobs.values()].map(job => job.promise)); await Promise.allSettled([...sequences.values()]); await characterLooks.dispose(); imageHosts.delete(ownerId); imageAborters.delete(ownerId) }
   }
 }

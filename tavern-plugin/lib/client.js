@@ -13516,7 +13516,7 @@ function bindTavernFontZoom(node, win) {
                   const state = context.state, event = match.event, data = event.data
                   if (event.type === 'assistant/message') return { ...state, answerSeq: event.seq }
                   if (event.type === 'turn/end') return { ...state, endSeq: event.seq }
-                  if (event.type === 'tool/call' && data.name === 'tavern_character_reference') return { ...state, calls: [...state.calls, data.callId] }
+                  if (event.type === 'tool/call' && ['tavern_character_reference', 'tavern_generate_image'].includes(data.name)) return { ...state, calls: [...state.calls, data.callId] }
                   if (event.type !== 'tool/result') return state
                   const images = [...state.images]
                   for (const result of data.message?.content || []) {
@@ -15183,6 +15183,7 @@ function bindTavernFontZoom(node, win) {
 							startTask("M6 3h9l4 4v14H6zM14 3v5h5", "从剧本新建人物卡", "先选择至少一份剧本，再进入工作台", function () { openResourcePicker("extract"); })),
 						h("div", { className: "dsh-tavern-task-group-title" }, "其他"),
 						h("div", { className: "dsh-tavern-task-grid" },
+							startTask("M4 4h16v16H4zM4 16l5-5 4 4 3-3 4 4M8 8h.01", "自由生图", "直接描述画面即可生成，人物绑定可选；沿用当前生图配置", function () { newCardConversation(null, "image", "自由生图"); }),
 							startTask("M4 19l4-1 11-11-3-3L5 15zM14 6l3 3", "创建写作 Skill", "从素材中提炼写作提示词，明确适用与禁用场景，用于前台正文写作", function () { openResourcePicker("writing-skill"); }),
 							startTask("M4 5h7v14H4zM13 5h7v14h-7z", "修改剧本 / 世界书 / 预设", "先选择一个目标，再进入工作台修改", function () { openResourcePicker("resource-edit"); }),
 							startTask("M5 5h14v14H5z", "空白开始", "不追加任务提示词，自由使用完整卡片 Agent", function () { newCardConversation(null); }))
@@ -20960,6 +20961,10 @@ function bindTavernFontZoom(node, win) {
 				if (!actx || !conversation) throw new Error("当前对话输入框不可用");
 				const input = conversation.input.for(actx);
 				const targetPath = card && card.path ? String(card.path).replace(/\\/g, "/").replace(/["\r\n]/g, "") : "";
+				if (task === "image") {
+					input.setDraft("请使用当前生图配置，根据下面的画面描述直接生成图片。无需创建或绑定人物卡；只有我明确要求时才保存为人物参考。\n\n画面描述：");
+					return;
+				}
 				if (task === "writing-skill") {
 					const references = String(input.state.getSnapshot().draft || "");
 					input.setDraft("/create-writing-skill\n\n请从已引用的素材中提炼写作 Skill，用于前台正文写作。先与我确认适用场景、禁用场景和写作要求，再编写自包含的提示词；成品不依赖原素材或参考文件。\n\n【参考素材】\n" + references);

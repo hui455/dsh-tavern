@@ -23,6 +23,7 @@ import { registerPresetTools } from './tools/preset.js'
 import { registerRegexLibraryTools } from './tools/regex-library.js'
 import { registerCardEditingTools } from './tools/card-editing.js'
 import { registerCardVisualReferenceTool } from './tools/card-visual-references.js'
+import { registerWorkbenchImageTool } from './tools/workbench-image.js'
 import { visualReferenceDocument } from './domain/card-visual-references.js'
 import { createConversationGuides } from './domain/conversation-guides.js'
 import { createGuideLibrary } from './domain/guide-library.js'
@@ -5384,6 +5385,7 @@ export async function apply(ctx) {
       turnOrchestrator,
       worldBooks,
     })
+    registerWorkbenchImageTool({ tools, chatForSession, generateImage: sceneIllustrations ? input => sceneIllustrations.generateWorkbenchImage(input) : undefined })
     registerCardVisualReferenceTool({ tools, chatForSession, readCardWorkspace, turnOrchestrator, activeTurnOf, attachments: () => ctx.get('attachments'), generateReference: sceneIllustrations ? input => sceneIllustrations.generateCardReference(input) : undefined })
   }
 
