@@ -11,6 +11,7 @@ import { stopService } from './service-lifecycle.mjs'
 import { installCliRuntime, migrateCliHome } from './cli-runtime.mjs'
 import { extractDshVersion, assertCompatibleDshVersion, dshCompatibilityNotice } from './dsh-compatibility.mjs'
 import { patchThemeFontLimit } from './theme-font-limit.mjs'
+import { patchDeepSeekFlashVision } from './deepseek-flash-vision.mjs'
 import { installPluginDependencies, resolveHostDependencies } from './plugin-dependencies.mjs'
 import { migrateLegacyTavernData, resolveTavernDataRoot } from '../tavern-plugin/lib/domain/tavern-data.js'
 import { ensureUserExtensions } from '../tavern-plugin/lib/domain/user-extensions.js'
@@ -301,6 +302,8 @@ async function installProfileOwned(host, { attemptId, runInstall, runDsh }) {
       ensureSidebarDefaults()
       const [theme] = resolveHostDependencies({ dsh, host, requiredExports: { '@deepseek-ai/dsh-client-ui-theme': null } })
       if (patchThemeFontLimit(theme.directory)) console.log('已将 DSH 原有字号上限放宽到 32px。')
+      const [deepseek] = resolveHostDependencies({ dsh, host, requiredExports: { '@deepseek-ai/dsh-llm-deepseek': null } })
+      if (patchDeepSeekFlashVision(deepseek.directory)) console.log('已更新官方 DeepSeek Flash 旧名称的识图能力。')
       transaction.commit()
     } catch (error) {
       if (!error.unsafeToRetry) await transaction.rollback()
