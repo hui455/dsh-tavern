@@ -1081,6 +1081,7 @@
 							startTask("M6 3h9l4 4v14H6zM14 3v5h5", "从剧本新建人物卡", "先选择至少一份剧本，再进入工作台", function () { openResourcePicker("extract"); })),
 						h("div", { className: "dsh-tavern-task-group-title" }, "其他"),
 						h("div", { className: "dsh-tavern-task-grid" },
+							startTask("M4 4h16v16H4zM4 16l5-5 4 4 3-3 4 4M8 8h.01", "自由生图", "直接描述画面即可生成，人物绑定可选；沿用当前生图配置", function () { newCardConversation(null, "image", "自由生图"); }),
 							startTask("M4 19l4-1 11-11-3-3L5 15zM14 6l3 3", "创建写作 Skill", "从素材中提炼写作提示词，明确适用与禁用场景，用于前台正文写作", function () { openResourcePicker("writing-skill"); }),
 							startTask("M4 5h7v14H4zM13 5h7v14h-7z", "修改剧本 / 世界书 / 预设", "先选择一个目标，再进入工作台修改", function () { openResourcePicker("resource-edit"); }),
 							startTask("M5 5h14v14H5z", "空白开始", "不追加任务提示词，自由使用完整卡片 Agent", function () { newCardConversation(null); }))

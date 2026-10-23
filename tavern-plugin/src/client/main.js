@@ -905,6 +905,10 @@ window.__ModuleLoader__.load({
 				if (!actx || !conversation) throw new Error("当前对话输入框不可用");
 				const input = conversation.input.for(actx);
 				const targetPath = card && card.path ? String(card.path).replace(/\\/g, "/").replace(/["\r\n]/g, "") : "";
+				if (task === "image") {
+					input.setDraft("请使用当前生图配置，根据下面的画面描述直接生成图片。无需创建或绑定人物卡；只有我明确要求时才保存为人物参考。\n\n画面描述：");
+					return;
+				}
 				if (task === "writing-skill") {
 					const references = String(input.state.getSnapshot().draft || "");
 					input.setDraft("/create-writing-skill\n\n请从已引用的素材中提炼写作 Skill，用于前台正文写作。先与我确认适用场景、禁用场景和写作要求，再编写自包含的提示词；成品不依赖原素材或参考文件。\n\n【参考素材】\n" + references);
