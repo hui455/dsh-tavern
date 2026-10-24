@@ -48,7 +48,7 @@ export function createSceneCharacterLooks({ store, runAgent, selection, generate
   }
   async function list(chatId, ids, config) {
     const document = await read(chatId), capability = imageReferenceCapability(config)
-    return { capability, people: ids.map(id => document.people[hash(id)]).filter(Boolean).map(person => publicPerson(person, capability)) }
+    return { capability, people: (ids ? ids.map(id => document.people[hash(id)]).filter(Boolean) : Object.values(document.people)).map(person => publicPerson(person, capability)) }
   }
   async function mutate(chatId, id, revision, change) {
     let saved

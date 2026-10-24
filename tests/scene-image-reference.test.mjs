@@ -31,5 +31,5 @@ test('reference requires explicit current-service consent and single-person iden
   assert.equal(switched.records.length, 0)
   assert.equal(switched.active.length, 1, 'revocation remains available after changing services')
   assert.match(switched.warning, /未授权/)
-  assert.match((await f.select({ config: channelSettings({ provider: 'openai' }) })).warning, /仅使用文字/)
+  assert.match((await f.select({ config: channelSettings({ provider: 'openai' }) })).warning, /未授权/)
 })

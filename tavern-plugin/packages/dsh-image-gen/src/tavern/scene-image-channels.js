@@ -170,16 +170,19 @@ export function imageChannelRequest(input) {
   const headers = { 'content-type': 'application/json', authorization: 'Bearer ' + input.apiKey }
   const prompt = input.prompt
   let path = 'images/generations', body
-  if (input.sourceImages !== undefined) {
+  if (input.sourceImages !== undefined || config.provider === 'openai' && references.length) {
     if (config.provider !== 'openai') throw new Error('当前原图编辑仅支持 OpenAI 图片接口，未发送请求')
-    if (!Array.isArray(input.sourceImages) || input.sourceImages.length !== 1) throw new Error('请提供一张原图，未发送请求')
-    const image = input.sourceImages[0]
-    if (!Buffer.isBuffer(image?.data) || !image.data.length || image.data.length > 8 * 1024 * 1024 || !['image/png', 'image/jpeg', 'image/webp'].includes(image.mediaType)) throw new Error('原图须为不超过 8 MiB 的 PNG、JPEG 或 WebP')
+    const sources = input.sourceImages ?? references
+    if (!Array.isArray(sources) || !sources.length || sources.length > 4 || input.sourceImages && sources.length !== 1) throw new Error('请提供一张原图，未发送请求')
     path = 'images/edits'
     delete headers['content-type'] // fetch supplies the multipart boundary.
     body = new FormData()
-    body.append('image', new Blob([image.data], { type: image.mediaType }), 'source.' + ({ 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp' }[image.mediaType]))
-    for (const [key, value] of Object.entries({ model: config.model, prompt, size: config.size, n: '1' })) body.append(key, value)
+    for (const [index, image] of sources.entries()) {
+      if (!Buffer.isBuffer(image?.data) || !image.data.length || image.data.length > 8 * 1024 * 1024 || !['image/png', 'image/jpeg', 'image/webp'].includes(image.mediaType)) throw new Error('原图须为不超过 8 MiB 的 PNG、JPEG 或 WebP')
+      body.append(sources.length === 1 ? 'image' : 'image[]', new Blob([image.data], { type: image.mediaType }), 'source-' + index + '.' + ({ 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp' }[image.mediaType]))
+    }
+    const referencePrompt = !input.sourceImages ? sources.map((image, index) => 'Reference ' + (index + 1) + ' is ' + image.name + '. Use identity and appearance only; follow the written scene for clothing, action and background.').join('\n') + '\n' + prompt : prompt
+    for (const [key, value] of Object.entries({ model: config.model, prompt: referencePrompt, size: config.size, n: '1' })) body.append(key, value)
   } else if (config.provider === 'novelai' && config.protocol === 'chat') {
     // A bare host serves the OpenAI-style API under /v1.
     path = new URL(config.baseURL).pathname.replace(/\/+$/, '') ? 'chat/completions' : 'v1/chat/completions'
