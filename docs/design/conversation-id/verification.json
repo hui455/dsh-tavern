@@ -1,0 +1,13 @@
+{
+  "checks": [
+    "light desktop: full ID and live RPC diagnostic copy, menu within viewport",
+    "Clipboard denial displays selectable fallback without false success",
+    "light mobile: full ID and live RPC diagnostic copy, menu within viewport",
+    "dark desktop: full ID and live RPC diagnostic copy, menu within viewport",
+    "Gameplay conversation menu also copies real diagnostic identity",
+    "dark mobile: full ID and live RPC diagnostic copy, menu within viewport",
+    "abyss desktop: full ID and live RPC diagnostic copy, menu within viewport",
+    "abyss mobile: full ID and live RPC diagnostic copy, menu within viewport"
+  ],
+  "note": "Live application and real identity RPC. Sidebar list restricted to two existing sessions with neutral titles for screenshot privacy; no model or image request sent."
+}

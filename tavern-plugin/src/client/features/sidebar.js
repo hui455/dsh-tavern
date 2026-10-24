@@ -15,6 +15,7 @@
 			const [initialResources, setInitialResources] = React.useState([]);
 			const [selectedInitialResources, setSelectedInitialResources] = React.useState({});
 			const [history, setHistory] = React.useState([]);
+            const [copyNotice, setCopyNotice] = React.useState(null);
 			const [historyGroupState, setHistoryGroupState] = React.useState(function () {
 				try { const value = JSON.parse(window.localStorage.getItem("dsh-tavern-history-groups") || "{}"); return value && typeof value === "object" && !Array.isArray(value) ? value : {}; } catch (_) { return {}; }
 			});
@@ -748,6 +749,23 @@
                 } catch (err) { setError("存档救援未完成，旧存档未修改：" + String(err.message || err)); }
                 finally { setBusy(false); }
             }
+            async function copyConversationIdentity(item, diagnostics) {
+                setCopyNotice(null);
+                let text = String(item.chatId || "");
+                try {
+                    if (diagnostics) {
+                        const result = await call("getConversationDiagnosticIdentity", { sessionId: item.sessionId });
+                        if (result.chatId !== item.chatId) throw new Error("对话绑定已变化，请刷新列表后重试");
+                        text = result.text;
+                    }
+                    if (!text) throw new Error("对话 ID 暂不可用，请刷新后重试");
+                    if (!navigator.clipboard?.writeText) throw new Error("浏览器不支持剪贴板，请手动复制下方文本");
+                    await navigator.clipboard.writeText(text);
+                    setCopyNotice({ sessionId: item.sessionId, message: diagnostics ? "已复制排错信息" : "已复制对话 ID" });
+                } catch (err) {
+                    setCopyNotice({ sessionId: item.sessionId, message: "复制失败：" + String(err?.message || err), text: text });
+                }
+            }
 			async function renameConversation(item, currentTitle) {
 				setMenuSession(null);
 				const title = await askTavernText({ title: "重命名对话", initialValue: currentTitle || item.cardName + "的新对话", maxLength: 80 });
@@ -916,7 +934,12 @@
 					h("div", { className: "dsh-tavern-side-row-meta" }, h("span", null, item.mode === "card" ? (item.cardPath ? ("已创建：" + item.cardName) : "尚未创建正式人物卡") : modeLabel(item.mode || "story")), h("span", null, formatTime(item.createdAt || item.lastOpenedAt || (summary ? summary.updatedAt : item.updatedAt))))
 					),
 					!managing ? h("button", { className: "dsh-tavern-side-row-more", title: "对话操作", "aria-expanded": menuSession === item.sessionId ? "true" : "false", onClick: function () { setMenuSession(menuSession === item.sessionId ? null : item.sessionId); } }, "⋯") : null,
-					!managing && menuSession === item.sessionId ? h("div", { className: "dsh-tavern-side-row-menu" },
+					!managing && menuSession === item.sessionId ? h("div", { className: "dsh-tavern-side-row-menu", "aria-label": "对话操作" },
+                        h("div", { className: "dsh-tavern-conversation-id" }, h("span", null, "对话 ID"), h("code", { title: item.chatId }, item.chatId || "暂不可用")),
+                        h("button", { type: "button", disabled: busy || !item.chatId, onClick: () => copyConversationIdentity(item, false) }, "复制对话 ID"),
+                        h("button", { type: "button", disabled: busy || !item.chatId, onClick: () => copyConversationIdentity(item, true) }, "复制排错信息"),
+                        copyNotice?.sessionId === item.sessionId ? h("div", { className: "dsh-tavern-copy-notice", role: "status", "aria-live": "polite" }, copyNotice.message,
+                            copyNotice.text ? h("textarea", { readOnly: true, value: copyNotice.text, "aria-label": "手动复制排错信息", onFocus: event => event.target.select() }) : null) : null,
 						h("button", { disabled: busy, onClick: function () { renameConversation(item, title); } }, "重命名"),
                         isPlayMode(item.mode || "story") ? h("button", { disabled: busy, onClick: () => rescueConversation(item) }, "存档救援") : null,
 						h("button", { className: "danger", disabled: busy, onClick: function () { deleteConversation(item, title); } }, "删除")

@@ -3054,3 +3054,11 @@ textarea.dsh-tavern-prompt-input { resize: vertical; min-height: 120px; }
   body.dsh-tavern-shell-active [data-slot="root"] > [class*="_frame"]:not([data-mobile-nav]) > [class*="_handle"] { display: none; }
 }
 .dsh-tavern-card-picker .dsh-tavern-card-list-copy > .dsh-tavern-card-summary, .dsh-tavern-card-library .dsh-tavern-card-list-copy > .dsh-tavern-card-summary { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
+
+/* Conversation identity stays selectable when clipboard permission is denied. */
+.dsh-tavern-side-row-menu:has(.dsh-tavern-conversation-id) { width: 232px; max-width: calc(100vw - 40px); }
+.dsh-tavern-conversation-id { padding: 8px 10px; display: grid; gap: 4px; border-bottom: 1px solid var(--dsw-alias-border-l2); }
+.dsh-tavern-conversation-id span { font-size: 12px; color: var(--dsw-alias-label-secondary); }
+.dsh-tavern-conversation-id code { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; user-select: text; }
+.dsh-tavern-copy-notice { padding: 8px 10px; font-size: 12px; overflow-wrap: anywhere; }
+.dsh-tavern-copy-notice textarea { box-sizing: border-box; width: 100%; min-height: 100px; font-size: 16px; color: inherit; background: var(--dsw-specific-sidebar-fill); border: 1px solid var(--dsw-alias-border-l2); }

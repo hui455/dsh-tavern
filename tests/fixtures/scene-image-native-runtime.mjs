@@ -196,7 +196,7 @@ export async function createSceneImageNativeRuntime(bootPath, { unifiedPlugin = 
   const endpoint = 'http://127.0.0.1:' + imageServer.address().port + '/v1'
   await service.configure({ model: 'fixture-image', baseURL: endpoint, apiKey: keys.get(IMAGE_CREDENTIAL) })
   await service.configure({ enabled: true })
-  return { backgroundChildren: async () => (await ctx.get('subagents').remoteExportList('scene-parent')).entries, reapBackground: () => runner.reapIdle(), backgroundLoaded: id => ({ agent: !!ctx.agents.get(id), session: !!ctx.sessions.get(id) }), runBackground: input => runner.run(input), get service() { return service }, get agentRunning() { return agentRuns > 0 }, chat, before, requests, imageRequests, parent, endpoint,
+  return { store, diagnostics: createSceneImageDiagnostics(store), backgroundChildren: async () => (await ctx.get('subagents').remoteExportList('scene-parent')).entries, reapBackground: () => runner.reapIdle(), backgroundLoaded: id => ({ agent: !!ctx.agents.get(id), session: !!ctx.sessions.get(id) }), runBackground: input => runner.run(input), get service() { return service }, get agentRunning() { return agentRuns > 0 }, chat, before, requests, imageRequests, parent, endpoint,
     traceEvents(sessionId) { return structuredClone(sessionEvents(ctx.sessions.get(sessionId))) },
     failNext(status = 503, message = 'test failure') { failNext = { status, message } },
     failNextSave() { failSave = true },

@@ -136,11 +136,12 @@ export function readPlayChatDebugTurn(editorChat, sourceChat, reference, request
   const found = messageForTurn(sourceChat, turn)
   if (found === null) throw new Error('游玩记录中不存在第 ' + turn + ' 轮回复')
   const message = found.message
-  const layers = ['overview', 'turns', 'conversation', 'input', 'source', 'session', 'display', 'saved-display', 'diagnostics', 'tavern', 'foreground', 'background', 'request', 'worldbook', 'iframe', 'preset', 'context', 'regex']
+  const layers = ['overview', 'turns', 'conversation', 'input', 'source', 'session', 'display', 'saved-display', 'diagnostics', 'tavern', 'foreground', 'background', 'request', 'worldbook', 'iframe', 'preset', 'context', 'regex', 'image']
   const layer = layers.includes(request.layer) ? request.layer : 'overview'
   const projected = typeof currentProjection === 'function' ? currentProjection(message) : currentProjection
   let text = ''
   if (layer === 'context') text = '【本局完整持久上下文 · 凭据已隐藏】\n' + json(sourceChat, true)
+  else if (layer === 'image') text = '【生图日志 · 对话 ' + sourceChat.id + ' · 第 ' + turn + ' 轮】\n' + json({ dropped: evidence.images?.dropped || 0, records: (evidence.images?.records || []).filter(item => item.turn === turn), note: '未记录或已清理的旧任务无法补录；图片效果须用 tavern_test_play_image 的 image 操作实际查看。' }, true)
   else if (layer === 'preset') text = '【本局预设快照】\n' + (sourceChat.runtimePresetSnapshot ? json(sourceChat.runtimePresetSnapshot, true) : '该局未保存预设快照；不能从当前预设文件反推。')
   else if (layer === 'regex') text = '【当前全局与卡片规则＋本局预设规则 · 实际组合顺序】\n' + json(evidence.regex || [], true)
   else if (layer === 'turns') text = '【可用游玩轮次】\n' + availableTurns(sourceChat).map(function (item) { return '第 ' + item + ' 轮' }).join('\n')
@@ -178,7 +179,8 @@ export function readPlayChatDebugTurn(editorChat, sourceChat, reference, request
   } else {
     text = [
       '【最新一轮游玩诊断】第 ' + turn + ' 轮',
-      '可按需读取：turns / conversation / input / source / session / display / saved-display / diagnostics / tavern / foreground / background / request / iframe',
+      '对话 ID：' + sourceChat.id + '；Session ID：' + sourceChat.sessionId,
+      '可按需读取：turns / conversation / input / source / session / display / saved-display / diagnostics / tavern / foreground / background / request / iframe / image',
       '本局预设：' + (sourceChat.runtimePresetSnapshot ? (str(sourceChat.runtimePresetSnapshot.presetName) || str(sourceChat.runtimePresetSnapshot.presetPath) || '已保存快照') : '无保存快照') + '；用 preset 分页读取，context 查询完整持久上下文，regex 查询组合规则。',
       '模型原文：' + (str(message.sourceText) || str(message.text)).length + ' 字',
       'Session 文本：' + str(message.text).length + ' 字',
