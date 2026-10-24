@@ -1,4 +1,6 @@
 import {TTL,normalize,similarity,digest} from './core.js';
+const spokenKey=text=>text.normalize('NFKC').toLowerCase().replace(/\s/gu,'');
+const isShort=text=>[...normalize(text)].length<12;
 const MAX_BYTES=256*1024*1024,MAX_ROWS=1000;
 let dbPromise;
 function db(){return dbPromise ||= new Promise((resolve,reject)=>{const r=indexedDB.open('local-role-voice',1);r.onupgradeneeded=()=>{const s=r.result.createObjectStore('audio',{keyPath:'id'});s.createIndex('partition','partition');};r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});}
@@ -13,14 +15,14 @@ export async function lookup(scope,text,threshold,now=Date.now()) {
   await prune(now);let list;
   await transact('readonly',s=>{const r=s.index('partition').getAll(scope);r.onsuccess=()=>list=r.result;});
   const norm=normalize(text);
-  const ranked=list.map(r=>({r,score:similarity(norm,r.normalized,threshold)})).filter(x=>x.score>=threshold).sort((a,b)=>b.score-a.score||b.r.lastUsed-a.r.lastUsed);
+  const ranked=list.map(r=>({r,score:(isShort(text)||isShort(r.text))?(spokenKey(text)===spokenKey(r.text)?1:0):similarity(norm,r.normalized,threshold)})).filter(x=>x.score>=threshold).sort((a,b)=>b.score-a.score||b.r.lastUsed-a.r.lastUsed);
   if(!ranked.length)return null;
   const {r,score}=ranked[0];
   await transact('readwrite',s=>{const q=s.get(r.id);q.onsuccess=()=>{if(q.result)s.put({...q.result,lastUsed:now});};});
   return {...r,score,lastUsed:now};
 }
 export async function save(scope,text,voice,blob,now=Date.now()) {
-  const normalized=normalize(text),id=await digest(scope+'\n'+normalized);
+  const normalized=normalize(text),id=await digest(scope+'\n'+(isShort(text)?'short-v2:'+spokenKey(text):normalized));
   await transact('readwrite',s=>s.put({id,partition:scope,text,normalized,voice,blob,createdAt:now,lastUsed:now}));await prune(now);
 }
 export const clear = ()=>transact('readwrite',s=>{s.clear();});
