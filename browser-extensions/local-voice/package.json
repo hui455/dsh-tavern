@@ -1,0 +1,11 @@
+{
+  "name": "dsh-local-voice-extension",
+  "version": "1.4.0",
+  "private": true,
+  "scripts": {
+    "test": "node tests/integration.cjs && node tests/selection.cjs && node tests/queue.cjs && node tests/dynamic.cjs && node tests/toolbar-ui.cjs && node tests/whitelist.cjs"
+  },
+  "devDependencies": {
+    "playwright": "1.58.2"
+  }
+}

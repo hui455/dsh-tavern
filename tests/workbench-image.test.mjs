@@ -15,6 +15,53 @@ import { comfyGraph } from './fixtures/scene-image-comfy-workflow.mjs'
 
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aKfoAAAAASUVORK5CYII=', 'base64')
 
+test('workbench edits only a current-session image using multipart HTTP; 504 is journaled without retry', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'workbench-edit-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const requests = [], records = [], saved = []
+  let status = 200
+  const server = createServer(async (req, res) => {
+    const chunks = []; for await (const chunk of req) chunks.push(chunk)
+    const bytes = Buffer.concat(chunks)
+    const form = await new Response(bytes, { headers: { 'content-type': req.headers['content-type'] } }).formData()
+    requests.push({ url: req.url, prompt: form.get('prompt'), image: Buffer.from(await form.get('image').arrayBuffer()) })
+    res.writeHead(status, { 'content-type': status === 200 ? 'application/json' : 'text/html', 'x-request-id': 'gateway-request-123' })
+    res.end(status === 200 ? JSON.stringify({ data: [{ b64_json: png.toString('base64') }] }) : '<html>Gateway Timeout</html>')
+  })
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  t.after(() => { server.closeAllConnections(); server.close() })
+  const service = createSceneIllustrations({ store: createProfileDataStore({ dataRoot: join(root, 'data') }),
+    credentials: () => ({ resolve: async () => ({ value: 'private-edit-key' }), set: async () => {} }),
+    diagnostics: { record: async (chatId, record) => records.push({ chatId, ...structuredClone(record) }) },
+    attachments: () => ({ saveImage: async image => { saved.push(image); return { attachmentId: 'edited', mediaType: image.mediaType } } }) })
+  t.after(() => service.dispose())
+  await service.configure({ provider: 'openai', model: 'gpt-image-test', baseURL: `http://127.0.0.1:${server.address().port}/v1`, apiKey: 'private-edit-key' })
+  await service.configure({ enabled: true })
+  const ref = { attachmentId: 'original', mediaType: 'image/png' }, tools = new Map()
+  let reads = 0
+  registerWorkbenchImageTool({ tools: { register: tool => tools.set(tool.name, tool) },
+    chatForSession: async () => ({ id: 'edit-chat', mode: 'card' }),
+    attachments: () => ({ readImage: async reference => { reads++; assert.deepEqual(reference, ref); return { data: png } } }),
+    generateImage: input => service.generateWorkbenchImage(input) })
+  const exec = { agent: { session: { id: 'edit-session', events: [{ data: { message: { content: [{ type: 'image', attachment: ref }] } } }] } } }
+  const tool = tools.get('tavern_generate_image')
+  for (const sourceImageId of ['', 'foreign-image']) await assert.rejects(tool.execute({ prompt: 'change background', sourceImageId }, exec), /原图/)
+  assert.equal(reads, 0); assert.equal(requests.length, 0)
+  const result = JSON.parse(await tool.execute({ prompt: 'change background', sourceImageId: 'original' }, exec))
+  assert.equal(result.edited, true); assert.equal(result.imageId, 'edited')
+  assert.equal(requests[0].url, '/v1/images/edits'); assert.deepEqual(requests[0].image, png)
+  assert.match(requests[0].prompt, /change background/); assert.deepEqual(saved[0].data, png)
+  status = 504
+  await assert.rejects(tool.execute({ prompt: 'change background', sourceImageId: 'original' }, exec), /504.*结果和扣费状态未确认.*不要自动重复请求/)
+  assert.equal(requests.length, 2); assert.equal(saved.length, 1)
+  const failure = records.at(-1)
+  assert.equal(failure.chatId, 'edit-chat'); assert.equal(failure.status, 'failed'); assert.equal(failure.outcome, 'unconfirmed')
+  assert.equal(failure.details.providerFailure.httpStatus, 504)
+  const response = failure.details.providerRequests.find(event => event.phase === 'response')
+  assert.equal(response.providerRequestId, 'gateway-request-123'); assert.ok(response.durationMs >= 0)
+  assert.doesNotMatch(JSON.stringify(records), /private-edit-key|iVBOR|change background/)
+})
+
 test('workflow prompt replacement removes template art direction while preserving character LoRA settings', () => {
   const graph = comfyGraph()
   graph['3'].inputs.text = 'fixed anime style'

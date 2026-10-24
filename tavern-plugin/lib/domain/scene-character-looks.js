@@ -48,7 +48,7 @@ export function createSceneCharacterLooks({ store, runAgent, selection, generate
   }
   async function list(chatId, ids, config) {
     const document = await read(chatId), capability = imageReferenceCapability(config)
-    return { capability, people: ids.map(id => document.people[hash(id)]).filter(Boolean).map(person => publicPerson(person, capability)) }
+    return { capability, people: (ids ? ids.map(id => document.people[hash(id)]).filter(Boolean) : Object.values(document.people)).map(person => publicPerson(person, capability)) }
   }
   async function mutate(chatId, id, revision, change) {
     let saved
@@ -139,7 +139,7 @@ export function createSceneCharacterLooks({ store, runAgent, selection, generate
     if (!candidate) throw new Error('定妆图不存在或已更新')
     return readImage(candidate.attachment)
   }
-  async function apply(chatId, source, config) {
+  async function apply(chatId, source, config, { textOnly = false } = {}) {
     const document = await read(chatId), capability = imageReferenceCapability(config), plan = structuredClone(source)
     const images = [], warnings = [], pending = [], approvals = []
     for (const id of plan.subjects || []) {
@@ -153,7 +153,7 @@ export function createSceneCharacterLooks({ store, runAgent, selection, generate
       else (plan.blocks ||= []).push({ owner: id, field: 'appearance', text: approved.appearance, tags: approved.tags })
       const record = plan.people?.find(p => p.id === id)
       if (record) record.fields = { ...record.fields, appearance: { text: approved.appearance } }
-      if (!capability.supported) continue
+      if (textOnly || !capability.supported) continue
       if (approved.gateway !== capability.gateway) { warnings.push('当前服务尚未确认使用定妆图，本次使用已确认外貌文字。'); continue }
       if (images.length >= capability.maxImages) { warnings.push('参考图达到渠道上限，其余人物使用已确认外貌文字。'); continue }
       let image

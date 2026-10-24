@@ -22,6 +22,7 @@ import { sceneStateSources } from './scene-state.js'
 import { createSceneImageDiagnostics, sceneAttemptDiagnostic } from './scene-image-diagnostics.js'
 import { createSceneImageReferences, imageReferencePeople } from './scene-image-reference.js'
 import { comfySubmissionWasRefused } from './scene-image-comfy.js'
+import { REFERENCE_SCENE_POLICY, SKIP_SCENE_IMAGES, referenceScenePeople, assertReferenceScene } from './scene-reference-policy.js'
 
 export const IMAGE_CREDENTIAL = 'DSH_TAVERN_IMAGE_API_KEY'
 const hash = value => createHash('sha256').update(value).digest('hex')
@@ -280,8 +281,8 @@ export function createSceneIllustrations(deps) {
     // The opening is the card's own text; rounds start at turn 2.
     if (!(latest >= 2)) return null
     const state = await status(sessionId, latest)
-    if (!state.key || state.status !== 'idle' || state.versions.length || state.hasDeletedImages || state.recovery === 'save' || state.outcome === 'unconfirmed') return null
-    return start(sessionId, latest, state.key, { kind: 'generate', sequenceAuto: true, requestId: 'auto-' + state.key.slice(0, 48) })
+    if (!state.key || state.status !== 'idle' || state.stage === 'skipped' && state.referencePolicyVersion === 2 || state.versions.length || state.hasDeletedImages || state.recovery === 'save' || state.outcome === 'unconfirmed') return null
+    return start(sessionId, latest, state.key, { kind: 'generate', sequenceAuto: true, requestId: 'auto-text-' + state.key.slice(0, 48) })
   }
   async function setReference(sessionId, turn, key, versionId, consent, enabled = true, personId) {
     const { chat, target, path } = await resolve(sessionId, turn, undefined, key)
@@ -417,6 +418,18 @@ export function createSceneIllustrations(deps) {
       if (jobs.has(path)) await jobs.get(path).promise
       if (!channelReady(active, apiKey)) throw new Error('还没配置生图渠道：请到 设置 → 场景生图 填写并保存渠道、模型和 API Key')
       const selectedImageReferences = await imageReferences.select({ chatId: chat.id, lineage: turns => sceneLineage(chat, target, turns), config: active })
+      let referenceOnly
+      if (options.sequenceAuto || existing?.autoReferencePolicy) {
+        const people = referenceScenePeople(cardReferences, await characterLooks.list(chat.id, null, active), selectedImageReferences)
+        const reason = !people.length ? '没有已保存的人物参考资料，自动配图已跳过。' : ''
+        if (reason) {
+          const skipped = { ...existing, autoReferencePolicy: true, referencePolicyVersion: 2, key: target.key, turn: target.turn, status: 'idle', stage: 'skipped', outcome: 'not_requested', skipReason: reason, versions: versionsOf(existing) }
+          await deps.store.writeJson(path, skipped)
+          return present(target, skipped)
+        }
+        const selected = options.referenceScene || existing?.referenceScene
+        referenceOnly = { people, ...(selected ? { selected } : {}) }
+      }
       if (typeof deps.attachments()?.saveImage !== 'function' || typeof deps.attachments()?.readImage !== 'function') throw new Error('当前 DSH 未提供图片附件服务，无法保存插画')
       const profile = imageExpressionProfile(active)
       const styleOf = plan => styles.resolve(active.style, profile, artStyleOf(plan))
@@ -432,6 +445,7 @@ export function createSceneIllustrations(deps) {
         if (!version) throw new Error('找不到要重画的图片版本')
         const artStyle = artStyleOf(version.plan)
         basePlan = applyImageStyle({ ...legacyImagePlan({ prompt: instruction, description: version.plan?.description || version.description }, profile), ...(artStyle ? { artStyle } : {}) }, await styleOf(version.plan))
+        if (referenceOnly && version.plan) basePlan = applyImageStyle({ ...version.plan, prompt: instruction }, await styleOf(version.plan))
         prepared = { saved: basePlan, input: null }
       } else if (kind === 'repaint' || kind === 'adjust') {
         const version = versionsOf(existing).find(item => item.id === options.versionId)
@@ -443,7 +457,7 @@ export function createSceneIllustrations(deps) {
       } else {
         const snapshot = sceneInput(chat, target, historical)
         const basic = sceneSources(chat, target, snapshot)
-        prepared = await plans.prepare({ chatId: chat.id, target, ...basic, profile, autoStyle: styleWrittenByAgent(active.style), stylePreference: active.style?.custom?.trim() || '', replan: kind === 'replan' || restart })
+        prepared = await plans.prepare({ chatId: chat.id, target, ...basic, profile, autoStyle: styleWrittenByAgent(active.style), stylePreference: active.style?.custom?.trim() || '', replan: Boolean(referenceOnly) || kind === 'replan' || restart })
         prepared.input.cardVisualReferences = cardReferences.characters.filter(person => basic.sources.some(source => source.text.includes(person.name)) || prepared.input.characters.some(known => known.name === person.name)).slice(0, 8)
           .map(person => ({ name: person.name, text: (person.text || '').slice(0, 1000), hasImage: Boolean(person.image) }))
         {
@@ -483,6 +497,10 @@ export function createSceneIllustrations(deps) {
       const playerMessage = (targetIndex >= 0 ? targetMessages.slice(0, targetIndex) : []).reverse().find(message => message.role === 'user')
       if (prepared.input) prepared.input = { ...prepared.input, playerRequest: String(playerMessage?.sourceText || playerMessage?.text || '').slice(0, 2000), camera: { requested: viewpoint, player: chat.playerName || chat.userName || '用户角色', instruction: '单角色控制默认第一人称；必要时补充上帝视角。多角色、阵营或世界控制题材按需采用上帝视角；不得硬把用户画成某个人。手动 requested 优先。' }, ...(sequence ? { sequence: { maxPictures: SCENE_EXTRA_SLOTS + 1, instruction: '主图之外再判断补图：正文有两个以上可画瞬间、地点或时间变化、连续动作推进、或除主图外还有同等强度的第二幕时，至少提交 1 项 additionalScenes（最多 5），只有一个瞬间才留空。每项 anchor 逐字复制正文原句，不与主图或其他补图重复。' } } : {}) }
       const expressionGuidance = imageExpressionGuidance(active)
+      if (referenceOnly && prepared.input) {
+        prepared.input.referenceOnly = referenceOnly
+        if (prepared.input.sequence) prepared.input.sequence.instruction = '只为有参考图且本轮实际出场的人物规划单人场景；同一人物不同场景可多张，无匹配人物调用 skip_scene_images。不要按篇幅凑图。'
+      }
       if (providerTask) prepared.saved = existing.plan
       if (prepared.input && expressionGuidance) prepared.input = { ...prepared.input, expressionGuidance }
       const selection = await deps.selection(sessionId)
@@ -504,12 +522,13 @@ export function createSceneIllustrations(deps) {
       if (!claimed) return present(target, record)
       record.diagnosticContext = { chatId: chat.id, sessionId }
       record.configuration = { ...channelSettings(active), style: active.style }
+      if (referenceOnly) { record.autoReferencePolicy = true; record.referencePolicyVersion = 2; record.referenceScene = referenceOnly.selected }
       record.diagnostics = { input: prepared.input, omitted: material.omitted, references: [],
         state: { omitted: material.stateAudit || [], sources: (prepared.sources || []).filter(source => source.origin?.kind === 'mvu-state') }, validations: [] }
       diagnosticSecrets.set(record.requestId, [apiKey])
       const job = { controller, requestId: record.requestId, promise: null }
       jobs.set(path, job)
-      job.promise = execute({ sessionId, chatId: chat.id, target, path, record, prepared, material, references, characterDesigns, selectedImageReferences, cardReferences, adjustment, basePlan, profile, styleOf, active, apiKey, selection, controller, viewpoint })
+      job.promise = execute({ sessionId, chatId: chat.id, target, path, record, prepared, material, references, characterDesigns, selectedImageReferences, cardReferences, referenceOnly, adjustment, basePlan, profile, styleOf, active, apiKey, selection, controller, viewpoint })
         .finally(() => { jobs.delete(path); diagnosticSecrets.delete(record.requestId) })
       // Failure to persist a failure is reported locally, never as an unhandled rejection.
       job.promise.catch(() => deps.onStorageError?.())
@@ -533,6 +552,7 @@ export function createSceneIllustrations(deps) {
             if (!state.versions.length || state.extras.some(item => ['failed', 'cancelled', 'running'].includes(item.status))) break
             const scene = scenes[index]
             const next = await start(sessionId, turn, base.key, { kind: 'add', sequence: false, viewpoint: scene.viewpoint,
+              ...(referenceOnly ? { sequenceAuto: true, referenceScene: scene } : {}),
               instruction: '按已规划的场景配图：' + scene.description + '\n使用正文原句作为 anchor：' + scene.anchor,
               requestId: 'sequence-' + hash(requestId + ':' + index).slice(0, 48) })
             const nextPath = pathFor(chat.id, next.key)
@@ -554,7 +574,7 @@ export function createSceneIllustrations(deps) {
     const { controller, path, target, record, active } = input
     let timer = setTimeout(() => controller.abort(), deps.timeoutMs || 300000)
     const stopWatching = watchCancellation(path, record, controller)
-    let attempted = false, plan = input.prepared.saved, providerError = '', validationError = '', result
+    let attempted = false, skipped = false, plan = input.prepared.saved, providerError = '', validationError = '', result
     let delivery
     async function recordFailure(error) {
       if (!attempted && !record.providerTask) record.outcome = 'not_requested'
@@ -568,12 +588,21 @@ export function createSceneIllustrations(deps) {
     }
     async function deliverImage() {
       controller.signal.throwIfAborted()
-      const lookReferences = await characterLooks.apply(input.chatId, plan, active)
-      const cardReference = applyCardVisualReferences(lookReferences.plan, input.cardReferences, active)
+      if (input.referenceOnly) assertReferenceScene(plan, input.referenceOnly.people, projectedSceneText(target.source), input.referenceOnly.selected)
+      const referenceOptions = { textOnly: Boolean(input.referenceOnly) }
+      const lookReferences = await characterLooks.apply(input.chatId, plan, active, referenceOptions)
+      const cardReference = applyCardVisualReferences(lookReferences.plan, input.cardReferences, active, referenceOptions)
       plan = cardReference.plan
+      if (input.referenceOnly && record.kind === 'prompt') plan = { ...plan, prompt: record.instruction }
       const viewpoint = input.viewpoint !== 'auto' ? input.viewpoint : plan.viewpoint || 'first-person'
       plan = { ...plan, viewpoint,
         cameraPrompt: record.kind === 'prompt' ? '' : viewpoint === 'first-person' ? "First-person point of view through the player character's eyes. Frame what the player can see; do not show the player as a separate full-body subject." : 'Third-person omniscient establishing viewpoint, showing the scene and spatial relationships from outside.' }
+      if (input.referenceOnly) {
+        const person = plan.people.find(person => person.id === plan.subjects[0])
+        const reference = input.referenceOnly.people.find(item => item.name === person.name)
+        plan.cameraPrompt += '\nExactly one visible person: ' + person.name + '. Solo scene; no other people in frame.' +
+          (reference?.tags || reference?.text ? '\nSaved character appearance: ' + (reference.tags || reference.text) + '. Use the current scene for clothing, action and background.' : '')
+      }
       delete record.pendingCharacters
       plan = applyImageStyle(plan, await input.styleOf(plan))
       const prompt = composeSceneImagePrompt(plan)
@@ -590,10 +619,10 @@ export function createSceneIllustrations(deps) {
       const generated = await imageQueue.run({ requestId: record.requestId, signal: controller.signal }, async () => {
         timer = setTimeout(() => controller.abort(), deps.timeoutMs || 300000)
         if (lookReferences) {
-          const latest = await characterLooks.apply(input.chatId, plan, active)
+          const latest = await characterLooks.apply(input.chatId, plan, active, referenceOptions)
           if (latest.approvalToken !== lookReferences.approvalToken) throw new Error('排队期间人物参考已变化，请重试配图；尚未请求图片')
         }
-        const reference = await imageReferences.load({ selected: input.selectedImageReferences, plan,
+        const reference = input.referenceOnly ? { images: [], warnings: [] } : await imageReferences.load({ selected: input.selectedImageReferences, plan,
           readImage: attachment => deps.attachments().readImage(attachment),
           readVersion: async source => versionsOf(await deps.store.readJson(pathFor(input.chatId, source.key))).find(version => version.id === source.versionId) })
         if (lookReferences) {
@@ -604,6 +633,16 @@ export function createSceneIllustrations(deps) {
           const lookIds = new Set([...explicitIds, ...explicit.map(image => image.personId)])
           reference.images = [...explicit, ...reference.images.filter(image => !lookIds.has(image.personId))].slice(0, input.selectedImageReferences.capability.maxImages)
           reference.warnings = [...new Set([...reference.warnings, ...lookReferences.warnings, ...cardReference.warnings])]
+        }
+        if (input.referenceOnly) {
+          // Selection and reference prose belong to planning, never provider image input.
+          const currentChat = await deps.chatForSession(input.sessionId)
+          if (!currentChat || sceneTarget(currentChat, target.turn).key !== (target.baseKey || target.key)) throw new Error('正文已变化，未请求图片')
+          const latestCard = await deps.cardReferencesForChat?.(currentChat) || { characters: [] }
+          const latestBound = await imageReferences.select({ chatId: input.chatId, lineage: turns => sceneLineage(currentChat, target, turns), config: active })
+          const latestPeople = referenceScenePeople(latestCard, await characterLooks.list(input.chatId, null, active), latestBound)
+          const name = plan.people.find(person => person.id === plan.subjects[0]).name
+          if (JSON.stringify(latestPeople.find(person => person.name === name)) !== JSON.stringify(input.referenceOnly.people.find(person => person.name === name))) throw new Error('本场景人物的参考资料已变化，未请求图片，请重新整理场景')
         }
         record.referenceImages = reference.images.map(image => image.reference)
         record.referenceWarning = reference.warnings.join(' ')
@@ -674,17 +713,25 @@ export function createSceneIllustrations(deps) {
             record.traceSessionId = sessionId
             await writeJob(path, record)
           },
-          selection: input.selection, system: deps.prompt ? deps.prompt(input.adjustment ? 'scene-image-adjustment' : 'scene-plan') : (input.adjustment ? readSceneAdjustmentInstruction() : readScenePlanInstruction()), signal: controller.signal,
+          selection: input.selection, system: (deps.prompt ? deps.prompt(input.adjustment ? 'scene-image-adjustment' : 'scene-plan') : (input.adjustment ? readSceneAdjustmentInstruction() : readScenePlanInstruction())) + (input.referenceOnly ? '\n\n' + REFERENCE_SCENE_POLICY : ''), signal: controller.signal,
           messages: [{ role: 'user', content: [{ type: 'text', text: JSON.stringify({ ...input.prepared.input,
             ...(record.planDraft ? { draft: sceneDraftSummary(draft) } : {}) }) }] }],
-          turnContext: '', tools: [...(input.adjustment ? [SCENE_ADJUSTMENT_TOOL] : SCENE_DRAFT_TOOLS), CHARACTER_DESIGN_READ_TOOL,
+          turnContext: '', tools: [...(input.adjustment ? [SCENE_ADJUSTMENT_TOOL] : SCENE_DRAFT_TOOLS), ...(input.referenceOnly ? [SKIP_SCENE_IMAGES] : []), CHARACTER_DESIGN_READ_TOOL,
             ...(input.references?.metadata.available ? [input.references.tool] : [])],
           maxToolCalls: (input.adjustment ? SCENE_PLAN_MAX_FAILURES : 10 + SCENE_PLAN_MAX_FAILURES) + (input.references?.metadata.available ? 3 : 0),
           toolLimitMessage: '绘图工具次数已用完，请停止调用；没有有效方案时不会请求图片。',
-          stopToolsWhen: () => Boolean(plan) || failures >= SCENE_PLAN_MAX_FAILURES,
+          stopToolsWhen: () => skipped || Boolean(plan) || failures >= SCENE_PLAN_MAX_FAILURES,
           onToolCall(call) {
             const next = toolTail.then(async () => {
-              if (plan || failures >= SCENE_PLAN_MAX_FAILURES) return '方案已提交或修正次数已用完，不得重复调用。'
+              if (skipped || plan || failures >= SCENE_PLAN_MAX_FAILURES) return '方案已提交或修正次数已用完，不得重复调用。'
+              if (input.referenceOnly && call.name === SKIP_SCENE_IMAGES.name) {
+                const args = readImageToolArguments(call)
+                if (typeof args.reason !== 'string' || !args.reason.trim() || args.reason.length > 300) return '请提交不超过 300 字的跳过原因。'
+                await writeJob(path, record, { ...record, status: 'idle', stage: 'skipped', outcome: 'not_requested', skipReason: args.reason,
+                  completedAt: Date.now(), requests: { ...record.requests, [record.requestId]: { status: 'skipped', outcome: 'not_requested' } } })
+                skipped = true
+                return JSON.stringify({ ok: true, skipped: true, images: 0, reason: args.reason })
+              }
               if (call.name === CHARACTER_DESIGN_READ_TOOL.name) {
                 controller.signal.throwIfAborted()
                 const result = await input.characterDesigns.read(call.arguments)
@@ -718,7 +765,13 @@ export function createSceneIllustrations(deps) {
                     draft = updated
                     return '草稿已保存，尚未请求图片。' + JSON.stringify(sceneDraftSummary(draft))
                   }
-                  plan = await plans.snapshot(input.chatId, await plans.commit(input.prepared, assembleSceneDraft(updated)))
+                  const submission = assembleSceneDraft(updated)
+                  if (input.referenceOnly) {
+                    const people = submission.subjects.map(id => submission.characters.find(person => person.id === id) || input.prepared.people?.[id])
+                      .filter(Boolean).map(person => ({ ...input.prepared.people?.[person.id], ...person }))
+                    assertReferenceScene({ ...submission, people }, input.referenceOnly.people.map(({ name }) => ({ name })), projectedSceneText(target.source), input.referenceOnly.selected)
+                  }
+                  plan = await plans.snapshot(input.chatId, await plans.commit(input.prepared, submission))
                 }
                 validationError = ''
                 record.plan = plan
@@ -740,10 +793,11 @@ export function createSceneIllustrations(deps) {
           await toolTail
           // A valid committed plan survives failure of the final acknowledgement.
           record.traceSessionId = error.traceSessionId || ''
-          if (!plan) throw error
+          if (!plan && !skipped) throw error
         }
         await toolTail
       }
+      if (skipped) return
       if (!plan) throw new Error(validationError || '生图 Agent 没有提交有效画面方案')
       await deliver()
     } catch (error) {
@@ -812,7 +866,7 @@ export function createSceneIllustrations(deps) {
     if (typeof input.name !== 'string' || !input.name.trim() || input.name.length > 100) throw new Error('请提供人物名称和完整生图描述（最多 12000 字符）')
     return generateWorkbenchImage(input)
   }
-  async function generateWorkbenchImage({ name, prompt, aspectRatio, signal }) {
+  async function generateWorkbenchImage({ name, prompt, aspectRatio, sourceImages, chatId, sessionId, signal }) {
     if (typeof prompt !== 'string' || !prompt.trim() || prompt.length > 12000) throw new Error('请提供完整生图描述（最多 12000 字符）')
     if (aspectRatio !== undefined && !['1:1', '2:3', '3:2', '3:4', '4:3', '9:16', '16:9', '21:9'].includes(aspectRatio)) throw new Error('不支持的生图比例')
     const { active, apiKey } = await capture()
@@ -822,6 +876,13 @@ export function createSceneIllustrations(deps) {
     signal?.addEventListener('abort', abort, { once: true })
     if (signal?.aborted) abort()
     const timer = setTimeout(() => controller.abort(), deps.timeoutMs || 300000)
+    const attempt = { requestId: 'workbench-image-' + randomUUID(), targetKey: 'workbench', sessionId,
+      createdAt: Date.now(), status: 'running', outcome: 'not_requested',
+      details: { configuration: { provider: active.provider, baseURL: active.baseURL, model: active.model, size: active.size },
+        operation: sourceImages ? 'edit' : 'generate', providerRequests: [] } }
+    async function logWorkbench() {
+      try { await diagnostics.record(chatId, attempt, [apiKey]) } catch { /* Never retry a paid request because logging failed. */ }
+    }
     try {
       const profile = imageExpressionProfile(active)
       // Workbench requests have no style-planning Agent: use the user's
@@ -831,13 +892,25 @@ export function createSceneIllustrations(deps) {
       const plan = applyImageStyle({ profile, aspectRatio: aspectRatio || (name ? '3:4' : '1:1'), description: name ? name + '参考图' : '自由生图',
         subjects: name ? ['person'] : [], people: name ? [{ id: 'person', name }] : [],
         blocks: [{ owner: name ? 'person' : 'scene', field: name ? 'appearance' : 'environment', text: prompt, tags: prompt }], prompt }, await styles.resolve(active.style, profile, artStyle))
-      const result = await imageQueue.run({ requestId: 'card-reference-' + randomUUID(), signal: controller.signal }, () =>
-        imageModule.generate({ ...active, apiKey, plan, prompt: composeSceneImagePrompt(plan), referenceImages: [], signal: controller.signal, maxBytes: Math.min(deps.attachments()?.imageLimits?.maxImageBytes || 8 * 1024 * 1024, 8 * 1024 * 1024) }))
+      const result = await imageQueue.run({ requestId: attempt.requestId, signal: controller.signal }, () =>
+        imageModule.generate({ ...active, apiKey, plan, prompt: composeSceneImagePrompt(plan), referenceImages: [], sourceImages,
+          onProviderRequest: async event => {
+            const { body, ...summary } = event
+            if (summary.phase === 'dispatch' && summary.method === 'POST') attempt.outcome = 'unconfirmed'
+            if (attempt.details.providerRequests.length < 100) attempt.details.providerRequests.push(summary)
+            await logWorkbench()
+          }, signal: controller.signal, maxBytes: Math.min(deps.attachments()?.imageLimits?.maxImageBytes || 8 * 1024 * 1024, 8 * 1024 * 1024) }))
+      attempt.outcome = 'received'
       const attachment = result.attachment || await deps.attachments().saveImage({ data: result.data, mediaType: result.mediaType, name: name ? name + '-reference' : 'workbench-image' })
+      attempt.status = 'succeeded'
       return { attachment, provider: active.provider, model: active.model }
     } catch (error) {
+      attempt.status = 'failed'
+      attempt.outcome = error.imageOutcome || attempt.outcome
+      attempt.error = redactImageError(error.message, apiKey)
+      attempt.details.providerFailure = error.imageFailure
       throw new Error(redactImageError(error.message, apiKey) + '；不要自动重复请求生图，请先告知用户本次结果。')
-    } finally { clearTimeout(timer); signal?.removeEventListener('abort', abort) }
+    } finally { clearTimeout(timer); signal?.removeEventListener('abort', abort); attempt.completedAt = Date.now(); await logWorkbench() }
   }
   async function testGenerate() {
     const { active, apiKey } = await capture()

@@ -562,7 +562,14 @@
                             const executeSlash = configuredSlashExecutor || props.executeSlash;
                             if (!props.sessionId || typeof executeSlash !== "function") throw new Error("当前界面无法触发生成，请刷新页面后重试");
                             return executeSlash("/send " + text + "|/trigger", props.sessionId);
-                        }, function (error) { tavernErrorHub.report("开始旅程", error); }) : function () {};
+                        }, function (error) { tavernErrorHub.report("卡片输入", error); }, function (text) {
+                            if (!listener || visible.key !== desired.key) throw new Error("卡片已失效，请重新打开");
+                            // Preparation pages have no conversation draft to mutate.
+                            if (props.openingPreview) return;
+                            const executeSlash = configuredSlashExecutor || props.executeSlash;
+                            if (!props.sessionId || typeof executeSlash !== "function") throw new Error("当前对话输入框不可用");
+                            return executeSlash("/setinput " + text, props.sessionId);
+                        }) : function () {};
 
 					const unsubscribeTheme = hostWindow.document && typeof hostWindow.MutationObserver === "function"
 						? subscribeTavernHostTheme(hostWindow, function (theme) { sendTextColors(null, theme); }) : null;

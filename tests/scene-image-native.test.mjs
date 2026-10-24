@@ -44,7 +44,7 @@ test('显式单人参考跨轮与重启传给 Gemini，取消后不再发送，�
   assert.equal(zipText((await runtime.exportLogs()).buffer).includes(image.data.slice(0, 100)), false)
   await runtime.service.configure({ provider: 'openai' })
   await runtime.service.configure({ enabled: true })
-  assert.match((await runtime.service.status('scene-parent', 2)).reference.warning, /仅使用文字/)
+  assert.match((await runtime.service.status('scene-parent', 2)).reference.warning, /未授权/)
   await runtime.service.configure({ enabled: false })
   const current = await runtime.service.status('scene-parent', 1)
   assert.ok(current.reference.versions.includes(first.versions[0].id), 'can revoke even when disabled or using an unsupported channel')

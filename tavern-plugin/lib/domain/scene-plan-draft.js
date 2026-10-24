@@ -18,7 +18,7 @@ export const SCENE_LAYOUT_TOOL = {
     moment: { type: 'string', enum: ['end', 'earlier'] },
     viewpoint: { type: 'string', enum: ['first-person', 'omniscient'] },
     viewpointReason: string(300),
-    additionalScenes: { type: 'array', maxItems: 5, description: '主图之外还要生成的补充画面，按正文顺序；不需要补图就传 []。每项 anchor 必须逐字复制正文原句，description 写这一张的画面，viewpoint 取 first-person 或 omniscient。', items: object({ anchor: string(200), description: string(500), viewpoint: { type: 'string', enum: ['first-person', 'omniscient'] } }, ['anchor', 'description', 'viewpoint']) },
+    additionalScenes: { type: 'array', maxItems: 5, description: '主图之外还要生成的补充画面，按正文顺序；不需要补图就传 []。自动配图每项必须指定有参考图的人物 personName。', items: object({ personName: string(100), anchor: string(200), description: string(500), viewpoint: { type: 'string', enum: ['first-person', 'omniscient'] } }, ['anchor', 'description', 'viewpoint']) },
     aspectRatio: { type: 'string', enum: COMFY_ASPECT_RATIOS },
     orientation: { type: 'string', enum: ['portrait', 'landscape', 'square'] },
     negative: string(600), anchor: string(200),

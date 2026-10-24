@@ -56,6 +56,7 @@ for (const referenceCapable of [false, true]) test('optional character reference
     generate: async input => { requests.push(input); return { data: png, mediaType: 'image/png' } }
   })
   if (referenceCapable) await fx.service.configure({ provider: 'gemini', baseURL: 'https://provider.example/v1', model: 'gemini-3.1-flash-image', apiKey: 'fixture-key' })
+  else await fx.service.configure({ provider: 'webui', baseURL: 'https://provider.example', authType: 'none' })
   await fx.service.configure({ enabled: true, confirmCharacters: true })
   const key = sceneTarget(fx.chat(), 2).key, address = { sessionId: 'parent', turn: 2, key }
   await fx.service.start('parent', 2, key)
@@ -577,9 +578,16 @@ test('adding a picture plans a different moment in its own slot; the turn keeps 
   await until(async () => (await fx.service.status('parent', 2)).extras[2]?.status === 'succeeded')
 })
 
-test('每轮自动生图：默认关闭；打开后结算完的新一轮自动画一张，已有图、删过、失败或可能已计费的轮次不再自动画', async t => {
+const automaticReferences = async () => ({ characters: [{ name: '林岚', image: { mediaType: 'image/png', base64: png.toString('base64') } }] })
+const automaticPlan = () => ({ ...planFixture(), subjects: ['p'], characters: [{ id: 'p', name: '林岚', fields: { appearance: { text: '成年女性', tags: 'adult woman' } } }] })
+
+test('每轮自动生图：默认关闭；有参考图的出场人物自动配图，已有图、删过、失败或可能已计费的轮次不再自动画', async t => {
   let calls = 0, fail = false
-  const fx = await fixture(t, { generate: async () => { calls++; if (fail) throw new Error('渠道暂时不可用'); return { data: png, mediaType: 'image/png' } } })
+  const fx = await fixture(t, { cardReferencesForChat: automaticReferences,
+    runAgent: async input => {
+      const data = JSON.parse(input.messages[0].content[0].text)
+      await submitPlanCall(input, { arguments: { plan: { ...automaticPlan(), anchor: data.sources.find(source => source.id === 'target').text } } })
+    }, generate: async () => { calls++; if (fail) throw new Error('渠道暂时不可用'); return { data: png, mediaType: 'image/png' } } })
   assert.equal((await fx.service.settings()).auto, false)
   assert.equal(await fx.service.autoGenerate('parent'), null, 'off by default')
   await fx.service.configure({ auto: true })
@@ -605,18 +613,18 @@ test('每轮自动生图：默认关闭；打开后结算完的新一轮自动�
 
 for (const failSecond of [false, true]) test('scene sequence generates distinct scenes once and stops on failed image: ' + failSecond, async t => {
   const requests = [], inputs = []
-  const fx = await fixture(t, { generate: async input => {
+  const fx = await fixture(t, { cardReferencesForChat: automaticReferences, generate: async input => {
     requests.push(input)
     if (failSecond && requests.length === 2) throw new Error('provider unavailable')
     return { data: png, mediaType: 'image/png' }
   }, runAgent: async input => {
     const data = JSON.parse(input.messages[0].content[0].text); inputs.push(data)
-    const plan = planFixture('scene detail, NSFW')
+    const plan = { ...automaticPlan(), scene: planFixture('scene detail, NSFW').scene }
     plan.anchor = data.addition ? (data.addition.request.includes('雨停了。') ? '雨停了。' : '她走到花园。') : '她站在窗边看雨。'
     plan.viewpoint = 'first-person'
     if (data.sequence) plan.additionalScenes = [
-      { anchor: '她走到花园。', description: '花园里的空间关系', viewpoint: 'omniscient' },
-      { anchor: '雨停了。', description: '从她眼中看到雨停后的花园', viewpoint: 'first-person' }
+      { personName: '林岚', anchor: '她走到花园。', description: '林岚走到花园', viewpoint: 'omniscient' },
+      { personName: '林岚', anchor: '雨停了。', description: '林岚在雨停后的花园', viewpoint: 'first-person' }
     ]
     await submitPlanCall(input, { arguments: { plan } })
   } })

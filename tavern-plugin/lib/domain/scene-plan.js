@@ -109,14 +109,16 @@ export function createScenePlans({ store }) {
     const viewpointReason = text(submission.viewpointReason || '', 'viewpointReason', 300)
     const additionalScenes = submission.additionalScenes || []
     assert(Array.isArray(additionalScenes) && additionalScenes.length <= 5, 'additionalScenes 最多 5 个补充场景')
-    const anchors = new Set([anchor].filter(Boolean))
+    const anchors = new Set()
     for (const item of additionalScenes) {
-      keys(item, ['anchor', 'description', 'viewpoint'], 'additionalScenes')
+      keys(item, ['anchor', 'description', 'viewpoint', 'personName'], 'additionalScenes')
       const a = text(item.anchor, 'additionalScenes.anchor', 200)
-      assert(a && !anchors.has(a) && pluginAnchorInsertion(prepared.sources.find(s => s.id === 'target')?.text || '', a) >= 0, '补充场景 anchor 必须是正文中未重复的原句')
+      const personName = text(item.personName || '', 'additionalScenes.personName', 100)
+      const sceneKey = personName + '\n' + a
+      assert(a && !anchors.has(sceneKey) && (personName || a !== anchor) && pluginAnchorInsertion(prepared.sources.find(s => s.id === 'target')?.text || '', a) >= 0, '补充场景 anchor 必须是正文中未重复的原句')
       assert(text(item.description, 'additionalScenes.description', 500).trim(), '补充场景 description 不能为空')
       assert(['first-person', 'omniscient'].includes(item.viewpoint), '补充场景 viewpoint 无效')
-      anchors.add(a)
+      anchors.add(sceneKey)
     }
     assert(['continued', 'changed', 'uncertain'].includes(submission.continuity), 'continuity 必须是 continued、changed 或 uncertain')
     assert(submission.continuity !== 'continued' || prepared.gapComplete, '期间剧情有裁剪，不能确认 continued；请使用 uncertain 并按当前依据重建动态状态')
