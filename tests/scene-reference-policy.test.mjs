@@ -4,24 +4,31 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createServer } from 'node:http'
+import { comfyGraph } from './fixtures/scene-image-comfy-workflow.mjs'
 import { createSceneIllustrations } from '../tavern-plugin/lib/domain/scene-illustration.js'
 import { createProfileDataStore } from '../tavern-plugin/lib/profile-data-store.js'
 import { referenceScenePeople, assertReferenceScene } from '../tavern-plugin/lib/domain/scene-reference-policy.js'
 
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aKfoAAAAASUVORK5CYII=', 'base64')
 const image = { mediaType: 'image/png', base64: png.toString('base64') }
-const refs = () => ({ characters: [{ name: '林岚', image }, { name: '林薇', image }, { name: '路人', text: '只有文字外貌' }] })
+const refs = () => ({ characters: [{ name: '林岚', image, text: '成年女性，银发', tags: 'adult woman, silver hair' }, { name: '林薇', image, text: '成年女性，红发', tags: 'adult woman, red hair' }] })
 const text = '林岚与林薇站在窗边看雨。随后林岚独自走进花园。路人提到远方的姐姐。'
 
-async function fixture(t, { references = refs(), respond, failAt = 0 } = {}) {
+async function fixture(t, { references = refs(), respond, failAt = 0, provider = 'openai' } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'scene-reference-policy-'))
-  const requests = [], inputs = [], saved = new Map()
+  const requests = [], inputs = [], paths = [], saved = new Map()
   const server = createServer(async (req, res) => {
+    paths.push(req.url)
+    if (req.url.includes('/history/')) {
+      const id = req.url.split('/').at(-1)
+      res.end(JSON.stringify({ [id]: { status: { completed: true }, outputs: { '7': { images: [{ filename: 'fixture.png', subfolder: '', type: 'output' }] } } } })); return
+    }
+    if (req.url.startsWith('/v1/view?')) { res.end(png); return }
     const chunks = []; for await (const chunk of req) chunks.push(chunk)
-    const form = await new Response(Buffer.concat(chunks), { headers: { 'content-type': req.headers['content-type'] } }).formData()
-    requests.push({ url: req.url, prompt: form.get('prompt'), image: Buffer.from(await form.get('image').arrayBuffer()) })
+    const body = JSON.parse(Buffer.concat(chunks).toString())
+    requests.push({ url: req.url, body, prompt: provider === 'comfyui' ? body.prompt['3'].inputs.text : body.prompt })
     res.writeHead(requests.length === failAt ? 504 : 200, { 'content-type': 'application/json' })
-    res.end(JSON.stringify(requests.length === failAt ? { error: { message: 'timeout' } } : { data: [{ b64_json: png.toString('base64') }] }))
+    res.end(JSON.stringify(requests.length === failAt ? { error: { message: 'timeout' } } : provider === 'comfyui' ? { prompt_id: body.prompt_id } : { data: [{ b64_json: png.toString('base64') }] }))
   })
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
   const chat = { id: 'reference-chat', mode: 'story', settleStatus: 'done', messages: [{ role: 'assistant', turn: 2, sourceText: text }] }
@@ -36,9 +43,9 @@ async function fixture(t, { references = refs(), respond, failAt = 0 } = {}) {
     runAgent: async input => { const data = JSON.parse(input.messages[0].content[0].text); inputs.push(data); await respond(input, data, state) }
   })
   t.after(async () => { await service.dispose(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); await rm(root, { recursive: true, force: true }) })
-  await service.configure({ provider: 'openai', baseURL: `http://127.0.0.1:${server.address().port}/v1`, model: 'gpt-image-test', apiKey: 'fixture-key' })
+  await service.configure({ provider, ...(provider === 'comfyui' ? { workflow: comfyGraph(), authType: 'none' } : {}), baseURL: `http://127.0.0.1:${server.address().port}/v1`, model: 'gpt-image-test', apiKey: 'fixture-key' })
   await service.configure({ enabled: true, auto: true })
-  return { service, requests, inputs, state, chat, saved }
+  return { service, requests, inputs, state, chat, saved, paths }
 }
 async function finish(fx) {
   for (let i = 0; i < 250; i++) {
@@ -55,8 +62,8 @@ async function submit(input, { name = '林岚', anchor = '林岚与林薇站在�
   return input.onToolCall({ name: 'submit_scene_plan', arguments: {} })
 }
 
-test('no valid reference images skips before any planner or paid request', async t => {
-  const fx = await fixture(t, { references: { characters: [{ name: '林岚', text: '文字参考' }, { name: '林薇', image: { mediaType: 'image/png', base64: 'bad' } }] } })
+test('no saved references skips before any planner or paid request', async t => {
+  const fx = await fixture(t, { references: { characters: [{ name: '林薇', image: { mediaType: 'image/png', base64: 'bad' } }] } })
   await fx.service.autoGenerate('parent')
   const status = await finish(fx)
   assert.equal(status.stage, 'skipped'); assert.equal(status.outcome, 'not_requested')
@@ -74,8 +81,8 @@ test('offscreen/mentioned reference people can skip without a generated image', 
   assert.equal(fx.requests.length, 0)
   await fx.service.autoGenerate('parent'); assert.equal(fx.inputs.length, 1)
 })
-for (const failAt of [0, 2]) test('reference people get separate scene images through real multipart HTTP, stops on failure: ' + failAt, async t => {
-  const fx = await fixture(t, { failAt, respond: async (input, data) => {
+for (const provider of ['openai', 'comfyui']) for (const failAt of [0, 2]) test('reference prose plans separate text-only scenes: ' + provider + '/' + failAt, async t => {
+  const fx = await fixture(t, { failAt, provider, respond: async (input, data) => {
     assert.deepEqual(data.referenceOnly.people.map(p => p.name), ['林岚', '林薇'])
     const selected = data.referenceOnly.selected
     const output = await submit(input, selected ? { name: selected.personName, anchor: selected.anchor } : { extras: [
@@ -88,15 +95,17 @@ for (const failAt of [0, 2]) test('reference people get separate scene images th
   assert.equal(state.status, 'succeeded', state.error)
   assert.equal(fx.requests.length, failAt || 3)
   assert.equal(fx.saved.size, failAt ? 1 : 3)
-  for (const request of fx.requests) { assert.equal(request.url, '/v1/images/edits'); assert.deepEqual(request.image, png); assert.match(request.prompt, /solo/) }
-  assert.match(fx.requests[0].prompt, /Reference 1 is 林岚/); assert.match(fx.requests[1].prompt, /Reference 1 is 林薇/)
+  for (const request of fx.requests) { assert.equal(request.url, provider === 'comfyui' ? '/v1/prompt' : '/v1/images/generations'); assert.match(request.prompt, /Solo/); assert.doesNotMatch(JSON.stringify(request.body), /iVBOR|sourceImages|referenceImages|LoadImage/) }
+  assert.ok(fx.paths.every(path => !path.includes('upload') && !path.includes('edits')))
+  if (provider === 'comfyui') { const graph = fx.requests[0].body.prompt; const original = comfyGraph(); assert.deepEqual(Object.keys(graph).sort(), Object.keys(original).sort()); assert.deepEqual(graph['1'], original['1']); assert.deepEqual(graph['5'].inputs.model, original['5'].inputs.model) }
+  assert.match(fx.requests[0].prompt, /Saved character appearance: adult woman, silver hair/); assert.match(fx.requests[1].prompt, /Saved character appearance: adult woman, red hair/)
   assert.equal(state.extras[0].outcome, failAt ? 'unconfirmed' : 'received')
   await fx.service.autoGenerate('parent'); assert.equal(fx.requests.length, failAt || 3)
 })
-test('removed reference never falls back to paid text generation', async t => {
+test('removed reference cancels stale planning before generation', async t => {
   const fx = await fixture(t, { respond: async (input, data, state) => { state.references = { characters: [] }; await submit(input) } })
   await fx.service.autoGenerate('parent'); const state = await finish(fx)
-  assert.equal(state.status, 'failed'); assert.equal(state.outcome, 'not_requested'); assert.match(state.error, /参考图不可用/)
+  assert.equal(state.status, 'failed'); assert.equal(state.outcome, 'not_requested'); assert.match(state.error, /参考资料已变化/)
   assert.equal(fx.requests.length, 0)
   // A manual retry of an automatic picture must not escape the saved policy.
   await fx.service.start('parent', 2, state.key, { requestId: 'retry-without-reference' })
@@ -104,19 +113,19 @@ test('removed reference never falls back to paid text generation', async t => {
 })
 test('planner cannot dispatch an unreferenced character or multiple subjects', async t => {
   const fx = await fixture(t, { respond: async input => {
-    assert.match(await submit(input, { name: '路人' }), /没有可用且已授权的参考图/)
+    assert.match(await submit(input, { name: '路人' }), /没有已保存的参考资料/)
     assert.match(await submit(input, { subjects: ['p', 'q'] }), /恰好一个/)
     await input.onToolCall({ name: 'skip_scene_images', arguments: { reason: '没有合适的单人场景' } })
   } })
   await fx.service.autoGenerate('parent'); assert.equal((await finish(fx)).stage, 'skipped')
   assert.equal(fx.requests.length, 0)
 })
-test('unsupported channel skips before planning, does not manufacture a reference workflow', async t => {
-  const fx = await fixture(t)
-  await fx.service.configure({ provider: 'webui', baseURL: 'http://127.0.0.1:12345', authType: 'none' })
-  await fx.service.configure({ enabled: true })
-  await fx.service.autoGenerate('parent'); assert.equal((await finish(fx)).stage, 'skipped')
-  assert.equal(fx.inputs.length, 0); assert.equal(fx.requests.length, 0)
+test('saved text references remain eligible on ComfyUI without image bytes', async t => {
+  const fx = await fixture(t, { provider: 'comfyui', references: { characters: [{ name: '林岚', text: '成年女性，银发', tags: 'adult woman, silver hair' }] },
+    respond: async (input, data) => { assert.match(data.referenceOnly.people[0].text, /银发/); await submit(input) } })
+  await fx.service.autoGenerate('parent'); assert.equal((await finish(fx)).status, 'succeeded')
+  assert.equal(fx.requests.length, 1); assert.match(fx.requests[0].prompt, /silver hair/)
+  assert.ok(fx.paths.every(path => !path.includes('upload')))
 })
 test('policy rejects multi-person, unreferenced, duplicate and mismatched scenes', () => {
   const people = referenceScenePeople(refs(), { people: [] }, { records: [] })
@@ -126,4 +135,10 @@ test('policy rejects multi-person, unreferenced, duplicate and mismatched scenes
     { ...plan, anchor: '不在本轮的场景' }, { ...plan, additionalScenes: [{ personName: '林岚', anchor: plan.anchor }] }]) assert.throws(() => assertReferenceScene(bad, people, text))
   assert.throws(() => assertReferenceScene(plan, people, text, { personName: '林薇', anchor: plan.anchor }))
   assert.deepEqual(referenceScenePeople({ characters: [{ name: '同名', image }, { name: '同名', image }] }, {}, {}), [])
+})
+
+test('planning uses approved and bound reference prose independently of image-provider consent', () => {
+  const people = referenceScenePeople({ characters: [] }, { people: [{ id: 'a', name: '林岚', approved: true, referenceMode: 'text',
+    confirmed: { appearance: '银发', tags: 'silver hair' } }] }, { records: [], active: [{ person: { id: 'b', name: '林薇', description: '红发' } }] })
+  assert.deepEqual(people, [{ id: 'a', name: '林岚', text: '银发', tags: 'silver hair' }, { id: 'b', name: '林薇', text: '红发' }])
 })

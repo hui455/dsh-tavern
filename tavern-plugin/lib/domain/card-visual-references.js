@@ -66,7 +66,7 @@ export function sessionReferenceImages(events) {
   return [...images.values()]
 }
 /** Explicit per-card references override proposed appearance, never block defaults. */
-export function applyCardVisualReferences(source, document, config) {
+export function applyCardVisualReferences(source, document, config, { textOnly = false } = {}) {
   const plan = structuredClone(source), capability = imageReferenceCapability(config), images = [], warnings = []
   const matchedIds = [], changedIds = []
   for (const person of plan.people || []) {
@@ -81,7 +81,7 @@ export function applyCardVisualReferences(source, document, config) {
       if (block) { block.text = ref.text; block.tags = ref.tags || ref.text }
       else (plan.blocks ||= []).push({ owner: person.id, field: 'appearance', text: ref.text, tags: ref.tags || ref.text })
     }
-    if (ref.image && capability.supported && images.length < capability.maxImages) {
+    if (!textOnly && ref.image && capability.supported && images.length < capability.maxImages) {
       try { images.push({ ...decodeReferenceImage(ref.image), personId: person.id, name: person.name, description: ref.text || '', reference: { kind: 'card-visual-reference', name: person.name, revision: document.revision } }) }
       catch { warnings.push('人物卡参考图不可用，改用参考文字或当前剧情。') }
     }

@@ -281,8 +281,8 @@ export function createSceneIllustrations(deps) {
     // The opening is the card's own text; rounds start at turn 2.
     if (!(latest >= 2)) return null
     const state = await status(sessionId, latest)
-    if (!state.key || state.status !== 'idle' || state.stage === 'skipped' || state.versions.length || state.hasDeletedImages || state.recovery === 'save' || state.outcome === 'unconfirmed') return null
-    return start(sessionId, latest, state.key, { kind: 'generate', sequenceAuto: true, requestId: 'auto-' + state.key.slice(0, 48) })
+    if (!state.key || state.status !== 'idle' || state.stage === 'skipped' && state.referencePolicyVersion === 2 || state.versions.length || state.hasDeletedImages || state.recovery === 'save' || state.outcome === 'unconfirmed') return null
+    return start(sessionId, latest, state.key, { kind: 'generate', sequenceAuto: true, requestId: 'auto-text-' + state.key.slice(0, 48) })
   }
   async function setReference(sessionId, turn, key, versionId, consent, enabled = true, personId) {
     const { chat, target, path } = await resolve(sessionId, turn, undefined, key)
@@ -421,9 +421,9 @@ export function createSceneIllustrations(deps) {
       let referenceOnly
       if (options.sequenceAuto || existing?.autoReferencePolicy) {
         const people = referenceScenePeople(cardReferences, await characterLooks.list(chat.id, null, active), selectedImageReferences)
-        const reason = !selectedImageReferences.capability.supported ? '当前渠道未接入人物参考图，自动配图已跳过。' : !people.length ? '没有可用且已授权的人物参考图，自动配图已跳过。' : ''
+        const reason = !people.length ? '没有已保存的人物参考资料，自动配图已跳过。' : ''
         if (reason) {
-          const skipped = { ...existing, autoReferencePolicy: true, key: target.key, turn: target.turn, status: 'idle', stage: 'skipped', outcome: 'not_requested', skipReason: reason, versions: versionsOf(existing) }
+          const skipped = { ...existing, autoReferencePolicy: true, referencePolicyVersion: 2, key: target.key, turn: target.turn, status: 'idle', stage: 'skipped', outcome: 'not_requested', skipReason: reason, versions: versionsOf(existing) }
           await deps.store.writeJson(path, skipped)
           return present(target, skipped)
         }
@@ -522,7 +522,7 @@ export function createSceneIllustrations(deps) {
       if (!claimed) return present(target, record)
       record.diagnosticContext = { chatId: chat.id, sessionId }
       record.configuration = { ...channelSettings(active), style: active.style }
-      if (referenceOnly) { record.autoReferencePolicy = true; record.referenceScene = referenceOnly.selected }
+      if (referenceOnly) { record.autoReferencePolicy = true; record.referencePolicyVersion = 2; record.referenceScene = referenceOnly.selected }
       record.diagnostics = { input: prepared.input, omitted: material.omitted, references: [],
         state: { omitted: material.stateAudit || [], sources: (prepared.sources || []).filter(source => source.origin?.kind === 'mvu-state') }, validations: [] }
       diagnosticSecrets.set(record.requestId, [apiKey])
@@ -589,14 +589,20 @@ export function createSceneIllustrations(deps) {
     async function deliverImage() {
       controller.signal.throwIfAborted()
       if (input.referenceOnly) assertReferenceScene(plan, input.referenceOnly.people, projectedSceneText(target.source), input.referenceOnly.selected)
-      const lookReferences = await characterLooks.apply(input.chatId, plan, active)
-      const cardReference = applyCardVisualReferences(lookReferences.plan, input.cardReferences, active)
+      const referenceOptions = { textOnly: Boolean(input.referenceOnly) }
+      const lookReferences = await characterLooks.apply(input.chatId, plan, active, referenceOptions)
+      const cardReference = applyCardVisualReferences(lookReferences.plan, input.cardReferences, active, referenceOptions)
       plan = cardReference.plan
       if (input.referenceOnly && record.kind === 'prompt') plan = { ...plan, prompt: record.instruction }
       const viewpoint = input.viewpoint !== 'auto' ? input.viewpoint : plan.viewpoint || 'first-person'
       plan = { ...plan, viewpoint,
         cameraPrompt: record.kind === 'prompt' ? '' : viewpoint === 'first-person' ? "First-person point of view through the player character's eyes. Frame what the player can see; do not show the player as a separate full-body subject." : 'Third-person omniscient establishing viewpoint, showing the scene and spatial relationships from outside.' }
-      if (input.referenceOnly) plan.cameraPrompt += '\nExactly one visible person: ' + plan.people.find(person => person.id === plan.subjects[0]).name + '. Solo scene; no other people in frame. Preserve this person\'s identity from the supplied reference image.'
+      if (input.referenceOnly) {
+        const person = plan.people.find(person => person.id === plan.subjects[0])
+        const reference = input.referenceOnly.people.find(item => item.name === person.name)
+        plan.cameraPrompt += '\nExactly one visible person: ' + person.name + '. Solo scene; no other people in frame.' +
+          (reference?.tags || reference?.text ? '\nSaved character appearance: ' + (reference.tags || reference.text) + '. Use the current scene for clothing, action and background.' : '')
+      }
       delete record.pendingCharacters
       plan = applyImageStyle(plan, await input.styleOf(plan))
       const prompt = composeSceneImagePrompt(plan)
@@ -613,10 +619,10 @@ export function createSceneIllustrations(deps) {
       const generated = await imageQueue.run({ requestId: record.requestId, signal: controller.signal }, async () => {
         timer = setTimeout(() => controller.abort(), deps.timeoutMs || 300000)
         if (lookReferences) {
-          const latest = await characterLooks.apply(input.chatId, plan, active)
+          const latest = await characterLooks.apply(input.chatId, plan, active, referenceOptions)
           if (latest.approvalToken !== lookReferences.approvalToken) throw new Error('排队期间人物参考已变化，请重试配图；尚未请求图片')
         }
-        const reference = await imageReferences.load({ selected: input.selectedImageReferences, plan,
+        const reference = input.referenceOnly ? { images: [], warnings: [] } : await imageReferences.load({ selected: input.selectedImageReferences, plan,
           readImage: attachment => deps.attachments().readImage(attachment),
           readVersion: async source => versionsOf(await deps.store.readJson(pathFor(input.chatId, source.key))).find(version => version.id === source.versionId) })
         if (lookReferences) {
@@ -629,18 +635,14 @@ export function createSceneIllustrations(deps) {
           reference.warnings = [...new Set([...reference.warnings, ...lookReferences.warnings, ...cardReference.warnings])]
         }
         if (input.referenceOnly) {
-          // Re-read card images at dispatch: removing/changing a reference while queued
-          // must not leak the captured image or silently fall back to text generation.
+          // Selection and reference prose belong to planning, never provider image input.
           const currentChat = await deps.chatForSession(input.sessionId)
           if (!currentChat || sceneTarget(currentChat, target.turn).key !== (target.baseKey || target.key)) throw new Error('正文已变化，未请求图片')
           const latestCard = await deps.cardReferencesForChat?.(currentChat) || { characters: [] }
-          const latestLooks = await characterLooks.apply(input.chatId, plan, active)
-          const latestCardReferences = applyCardVisualReferences(latestLooks.plan, latestCard, active)
-          const ids = new Set(latestCardReferences.images.map(image => image.personId))
-          reference.images = [...latestCardReferences.images, ...latestLooks.images.filter(image => !ids.has(image.personId)),
-            ...reference.images.filter(image => image.reference?.kind !== 'card-visual-reference' && image.reference?.kind !== 'confirmed-character-look')]
-            .filter(image => image.personId === plan.subjects[0]).slice(0, 1)
-          if (!reference.images.length) throw new Error('本场景人物的参考图不可用或授权已变化，未请求图片；不会退回文生图')
+          const latestBound = await imageReferences.select({ chatId: input.chatId, lineage: turns => sceneLineage(currentChat, target, turns), config: active })
+          const latestPeople = referenceScenePeople(latestCard, await characterLooks.list(input.chatId, null, active), latestBound)
+          const name = plan.people.find(person => person.id === plan.subjects[0]).name
+          if (JSON.stringify(latestPeople.find(person => person.name === name)) !== JSON.stringify(input.referenceOnly.people.find(person => person.name === name))) throw new Error('本场景人物的参考资料已变化，未请求图片，请重新整理场景')
         }
         record.referenceImages = reference.images.map(image => image.reference)
         record.referenceWarning = reference.warnings.join(' ')
