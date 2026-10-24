@@ -63,3 +63,15 @@ test('exact AI aspect ratio survives committed plans and rejects unsupported val
   assert.equal(plan.aspectRatio, '3:4')
   await assert.rejects(fx.module.commit(await fx.prepare(2), { ...first(), aspectRatio: '99:1' }), /aspectRatio/)
 })
+
+test('换装优先于稳定外貌中的旧衣服，并在保存方案前拒绝赤脚穿鞋冲突', async t => {
+ const fx=await fixture(t), submission=first()
+ submission.characters[0].fields.appearance=field('黑发蓝眼的成年女性','adult woman, black hair, blue eyes, black lace corset, sheer black stockings, burgundy high heels')
+ submission.characters[0].fields.clothing=field('白衬衫、短裤、赤脚','white shirt, cotton shorts, barefoot')
+ const plan=await fx.module.commit(await fx.prepare(),submission)
+ assert.match(plan.prompt,/white shirt, cotton shorts, barefoot/)
+ assert.match(plan.prompt,/black hair, blue eyes/)
+ assert.doesNotMatch(plan.prompt,/corset|stockings|high heels/)
+ submission.characters[0].fields.clothing=field('赤脚且穿高跟','barefoot, wearing high heels')
+ await assert.rejects(fx.module.commit(await fx.prepare(2),submission),/赤脚与穿鞋/)
+})

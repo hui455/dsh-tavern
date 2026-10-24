@@ -1,7 +1,7 @@
 import { COMFY_ASPECT_RATIOS } from '../../packages/dsh-image-gen/src/tavern/scene-image-comfy-workflow.js'
 import { createHash } from 'node:crypto'
 import { pluginAnchorInsertion } from './plugin-text-segments.js'
-import { statesBareClothing, stripGarmentTags } from './scene-tag-filter.js'
+import { currentAppearanceTags, assertSingleFootwearState } from './scene-tag-filter.js'
 
 const digest = value => createHash('sha256').update(JSON.stringify(value)).digest('hex')
 const personFields = ['appearance', 'clothing', 'action', 'expression', 'position']
@@ -242,11 +242,12 @@ export function createScenePlans({ store }) {
         if (field === 'appearance' && views[id]?.appearance) return views[id].appearance
         return (pendingBlocks[value.blockId] || prepared.block(id, field, value.text)).tags
       }
-      // A nude shot must not inherit garment words from the reused appearance anchor.
-      const bare = statesBareClothing(tagsFor('clothing'))
+      // Current clothing replaces outfit and footwear in the reused appearance anchor.
+      const clothing = tagsFor('clothing')
+      assertSingleFootwearState(clothing, person.name + '/clothing')
       const tags = shownFields(id).filter(field => person.fields[field]?.text).map(field => {
         const tags = tagsFor(field)
-        return field === 'appearance' && bare ? stripGarmentTags(tags) : tags
+        return field === 'appearance' ? currentAppearanceTags(tags, clothing) : tags
       })
       promptParts.push(person.name + ': ' + tags.join(', '))
     }
