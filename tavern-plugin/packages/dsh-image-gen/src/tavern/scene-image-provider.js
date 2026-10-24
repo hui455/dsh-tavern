@@ -140,7 +140,7 @@ async function requestSceneImage(input, deps) {
   const send = () => request(spec.url, {
     method: 'POST', redirect: 'error', signal: input.signal,
     headers: spec.headers,
-    body: JSON.stringify(spec.body)
+    body: spec.body instanceof FormData ? spec.body : JSON.stringify(spec.body)
   })
   let response = await send()
   // NovelAI answers 429 when the account already has a generation running
@@ -163,8 +163,9 @@ async function requestSceneImage(input, deps) {
       detail = Object.fromEntries(Object.entries({ message, code: value?.code, param: value?.param }).filter(([, item]) => typeof item === 'string').map(([key, item]) => [key, safe(item)]))
     } catch { /* A malformed/oversized error must not hide the actual HTTP status. */ }
     const error = new Error('生图服务请求失败（HTTP ' + response.status + '）' + (detail.message ? '：' + detail.message : '') + (detail.param ? '（字段：' + detail.param + '）' : ''))
+    if (response.status === 504) error.message += '。生图服务网关等待上游超时，生成结果和扣费状态未确认；请先查询渠道记录，不要直接重复生成'
     // Many custom endpoints serve image models only through chat/completions.
-    if (response.status === 404 && input.provider === 'openai') error.message += '。该地址没有 OpenAI 图片接口；如果它提供的是 NovelAI 图片，请改选「NovelAI（官方或自定义渠道）」并添加接入点'
+    if (response.status === 404 && input.provider === 'openai') error.message += input.sourceImages ? '。该地址未提供 OpenAI 图片编辑接口 /images/edits；请确认渠道支持图片编辑，不会自动改用文生图' : '。该地址没有 OpenAI 图片接口；如果它提供的是 NovelAI 图片，请改选「NovelAI（官方或自定义渠道）」并添加接入点'
     error.imageFailure = { httpStatus: response.status, ...detail }
     // A proxy timeout/5xx or 429 does not establish whether the upstream took
     // the job. Only explicit validation/auth rejection is safe for ordinary retry.

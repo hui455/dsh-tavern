@@ -812,7 +812,7 @@ export function createSceneIllustrations(deps) {
     if (typeof input.name !== 'string' || !input.name.trim() || input.name.length > 100) throw new Error('请提供人物名称和完整生图描述（最多 12000 字符）')
     return generateWorkbenchImage(input)
   }
-  async function generateWorkbenchImage({ name, prompt, aspectRatio, signal }) {
+  async function generateWorkbenchImage({ name, prompt, aspectRatio, sourceImages, chatId, sessionId, signal }) {
     if (typeof prompt !== 'string' || !prompt.trim() || prompt.length > 12000) throw new Error('请提供完整生图描述（最多 12000 字符）')
     if (aspectRatio !== undefined && !['1:1', '2:3', '3:2', '3:4', '4:3', '9:16', '16:9', '21:9'].includes(aspectRatio)) throw new Error('不支持的生图比例')
     const { active, apiKey } = await capture()
@@ -822,6 +822,13 @@ export function createSceneIllustrations(deps) {
     signal?.addEventListener('abort', abort, { once: true })
     if (signal?.aborted) abort()
     const timer = setTimeout(() => controller.abort(), deps.timeoutMs || 300000)
+    const attempt = { requestId: 'workbench-image-' + randomUUID(), targetKey: 'workbench', sessionId,
+      createdAt: Date.now(), status: 'running', outcome: 'not_requested',
+      details: { configuration: { provider: active.provider, baseURL: active.baseURL, model: active.model, size: active.size },
+        operation: sourceImages ? 'edit' : 'generate', providerRequests: [] } }
+    async function logWorkbench() {
+      try { await diagnostics.record(chatId, attempt, [apiKey]) } catch { /* Never retry a paid request because logging failed. */ }
+    }
     try {
       const profile = imageExpressionProfile(active)
       // Workbench requests have no style-planning Agent: use the user's
@@ -831,13 +838,25 @@ export function createSceneIllustrations(deps) {
       const plan = applyImageStyle({ profile, aspectRatio: aspectRatio || (name ? '3:4' : '1:1'), description: name ? name + '参考图' : '自由生图',
         subjects: name ? ['person'] : [], people: name ? [{ id: 'person', name }] : [],
         blocks: [{ owner: name ? 'person' : 'scene', field: name ? 'appearance' : 'environment', text: prompt, tags: prompt }], prompt }, await styles.resolve(active.style, profile, artStyle))
-      const result = await imageQueue.run({ requestId: 'card-reference-' + randomUUID(), signal: controller.signal }, () =>
-        imageModule.generate({ ...active, apiKey, plan, prompt: composeSceneImagePrompt(plan), referenceImages: [], signal: controller.signal, maxBytes: Math.min(deps.attachments()?.imageLimits?.maxImageBytes || 8 * 1024 * 1024, 8 * 1024 * 1024) }))
+      const result = await imageQueue.run({ requestId: attempt.requestId, signal: controller.signal }, () =>
+        imageModule.generate({ ...active, apiKey, plan, prompt: composeSceneImagePrompt(plan), referenceImages: [], sourceImages,
+          onProviderRequest: async event => {
+            const { body, ...summary } = event
+            if (summary.phase === 'dispatch' && summary.method === 'POST') attempt.outcome = 'unconfirmed'
+            if (attempt.details.providerRequests.length < 100) attempt.details.providerRequests.push(summary)
+            await logWorkbench()
+          }, signal: controller.signal, maxBytes: Math.min(deps.attachments()?.imageLimits?.maxImageBytes || 8 * 1024 * 1024, 8 * 1024 * 1024) }))
+      attempt.outcome = 'received'
       const attachment = result.attachment || await deps.attachments().saveImage({ data: result.data, mediaType: result.mediaType, name: name ? name + '-reference' : 'workbench-image' })
+      attempt.status = 'succeeded'
       return { attachment, provider: active.provider, model: active.model }
     } catch (error) {
+      attempt.status = 'failed'
+      attempt.outcome = error.imageOutcome || attempt.outcome
+      attempt.error = redactImageError(error.message, apiKey)
+      attempt.details.providerFailure = error.imageFailure
       throw new Error(redactImageError(error.message, apiKey) + '；不要自动重复请求生图，请先告知用户本次结果。')
-    } finally { clearTimeout(timer); signal?.removeEventListener('abort', abort) }
+    } finally { clearTimeout(timer); signal?.removeEventListener('abort', abort); attempt.completedAt = Date.now(); await logWorkbench() }
   }
   async function testGenerate() {
     const { active, apiKey } = await capture()

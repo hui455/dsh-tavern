@@ -5385,7 +5385,7 @@ export async function apply(ctx) {
       turnOrchestrator,
       worldBooks,
     })
-    registerWorkbenchImageTool({ tools, chatForSession, generateImage: sceneIllustrations ? input => sceneIllustrations.generateWorkbenchImage(input) : undefined })
+    registerWorkbenchImageTool({ tools, chatForSession, attachments: () => ctx.get('attachments'), generateImage: sceneIllustrations ? input => sceneIllustrations.generateWorkbenchImage(input) : undefined })
     registerCardVisualReferenceTool({ tools, chatForSession, readCardWorkspace, turnOrchestrator, activeTurnOf, attachments: () => ctx.get('attachments'), generateReference: sceneIllustrations ? input => sceneIllustrations.generateCardReference(input) : undefined })
   }
 
