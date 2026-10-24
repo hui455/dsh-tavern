@@ -2,6 +2,7 @@
   if (window.__localVoiceToolbar) return;
   window.__localVoiceToolbar = true;
   let cfg = { voice: '胡桃_ZH', voices: [{ id: '胡桃_ZH', name: '胡桃' }], maxChars: 500, toolbar: true, allowed: false };
+  const requests=new Map();let hintTimer;
   let selected = '', requestId = null, count = 0, state = 'idle';
   const host = document.createElement('div');
   host.style.cssText = 'position:fixed;z-index:2147483647;display:none;max-width:calc(100vw - 16px)';
@@ -19,6 +20,10 @@
       .play-icon svg{width:14px;height:14px;fill:currentColor}
       button[data-state=checking] .play-icon,button[data-state=generating] .play-icon{border:2px solid #ffffff66;border-top-color:#fff;border-radius:50%;animation:spin .8s linear infinite}
       button[data-state=checking] svg,button[data-state=generating] svg{display:none}
+      .state-hint{position:absolute;top:calc(100% + 5px);left:0;padding:3px 7px;border:1px solid var(--voice-border);border-radius:6px;background:var(--voice-bg);color:var(--voice-ink);font:12px/1.5 system-ui;white-space:nowrap;pointer-events:none;box-shadow:0 3px 10px #24203518}.state-hint:empty{display:none}
+      button[data-state=playing] .play-icon{gap:2px}button[data-state=playing] .play-icon i{width:3px;height:12px;background:currentColor;border-radius:2px;animation:meter .7s ease-in-out infinite alternate}button[data-state=playing] .play-icon i:nth-child(2){animation-delay:-.3s}button[data-state=playing] .play-icon i:nth-child(3){animation-delay:-.5s}
+      @keyframes meter{from{transform:scaleY(.3)}to{transform:scaleY(1)}}
+      @media(prefers-reduced-motion:reduce){.play-icon i{animation:none!important}}
       .voice{position:relative;display:flex;align-items:center;justify-content:center;width:36px;height:36px;flex:none;border-radius:9px;color:var(--voice-accent)}.voice:hover{background:var(--voice-soft)}.voice:focus-within{outline:2px solid var(--voice-accent);outline-offset:2px}
       select{appearance:none;font:inherit;line-height:1.5;color:var(--voice-ink);background:transparent;border:0;border-radius:10px;position:absolute;inset:0;opacity:0;height:36px;width:36px;padding:0;text-overflow:ellipsis;cursor:pointer}
       select:hover{background:var(--voice-soft)}option{background:var(--voice-bg);color:var(--voice-ink)}
@@ -35,7 +40,7 @@
         <button id="play" type="button" aria-label="朗读选中文字"><span class="play-icon" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M4 2.5 13 8 4 13.5Z"/></svg></span></button>
         <label class="voice"><select aria-label="朗读角色"></select><svg class="voice-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="7" r="3"/><path d="M3 20v-2a6 6 0 0 1 12 0v2M17 7a5 5 0 0 1 0 8M20 4a9 9 0 0 1 0 14"/></svg></label>
       </nav>
-      <p class="message" role="status" aria-live="polite" aria-atomic="true"></p>
+      <span class="state-hint" aria-hidden="true"></span><p class="message" role="status" aria-live="polite" aria-atomic="true"></p>
     </section>`;
   const $ = s => shadow.querySelector(s), voice = $('select'), status = $('.message'), play = $('#play');
   function setStatus(message = '', nextState = 'idle', visible = false) {
@@ -43,6 +48,10 @@
     status.textContent = message;
     status.className = 'message' + (visible ? ' visible' : '') + (state === 'error' ? ' error' : '');
     play.dataset.state = state;
+    const icons={queued:'<svg viewBox="0 0 16 16"><path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1Zm0 2a5 5 0 1 1 0 10A5 5 0 0 1 8 3Zm-1 1h2v4l2 1-1 1.5L7 9Z"/></svg>',ended:'<svg viewBox="0 0 16 16"><path d="m2 8 4 4 8-8-1.5-1.5L6 9 3.5 6.5Z"/></svg>',playing:'<i></i><i></i><i></i>'};
+    $('.play-icon').innerHTML=icons[state]||'<svg viewBox="0 0 16 16"><path d="M4 2.5 13 8 4 13.5Z"/></svg>';
+    clearTimeout(hintTimer);$('.state-hint').textContent=({checking:'准备中',generating:'生成中',queued:'已排队',playing:'播放中',ended:'播放完成',stopped:'已停止'})[state]||'';
+    hintTimer=setTimeout(()=>{$('.state-hint').textContent='';},2200);
     play.title = `${count} / ${cfg.maxChars} 字 · 点击按顺序朗读` + (message ? '\n' + message : '');
   }
   function validateSelection() {
@@ -52,15 +61,14 @@
     else setStatus(`${count} / ${cfg.maxChars} 字`);
   }
   function fill() {
-    const previous = voice.value;
     voice.replaceChildren(...cfg.voices.map(v => { const o = document.createElement('option'); o.value = v.id; o.textContent = v.name; return o; }));
-    voice.value = cfg.voices.some(v => v.id === previous) ? previous : cfg.voice;
+    voice.value = cfg.voice;
     voice.title = '声音：' + (voice.selectedOptions[0]?.textContent || '未选择') + '（点击切换）';
   }
   fill();
-  function refreshSettings(){cfg.allowed=false;host.style.display='none';return chrome.runtime.sendMessage({type:'public-settings'}).then(r=>{cfg={...cfg,...r};fill();validateSelection();if(cfg.allowed)show();}).catch(()=>{cfg.allowed=false;});}
+  function refreshSettings(){cfg.allowed=false;host.style.display='none';return chrome.runtime.sendMessage({type:'public-settings'}).then(r=>{cfg={...cfg,...r};fill();validateSelection();if(cfg.allowed){show();renderRequests();}}).catch(()=>{cfg.allowed=false;});}
   void refreshSettings();
-  voice.addEventListener('change', () => { voice.title = '声音：' + (voice.selectedOptions[0]?.textContent || '未选择') + '（点击切换）'; });
+  voice.addEventListener('change', async () => {const chosen=voice.value;cfg.voice=chosen;voice.title='声音：'+voice.selectedOptions[0].textContent+'（点击切换）';try{const r=await chrome.runtime.sendMessage({type:'set-voice',voice:chosen});if(!r.ok)throw Error(r.error);}catch(e){setStatus('音色偏好未保存：'+e.message,'error',true);}});
   function show() {
     if (!cfg.toolbar || !cfg.allowed) return;
     const active = document.activeElement;
@@ -72,7 +80,7 @@
     if (!inputText && (!selection?.rangeCount || selection.isCollapsed)) return;
     const text = (inputText || selection.toString()).trim();
     if (!text) return;
-    if (text !== selected) { selected = text; requestId = null; validateSelection(); }
+    if (text !== selected) { selected = text; validateSelection();renderRequests(); }
     if (!host.isConnected) document.documentElement.append(host);
     host.style.display = 'block';
     const rect = inputText ? active.getBoundingClientRect() : selection.getRangeAt(0).getBoundingClientRect();
@@ -89,19 +97,23 @@
   document.addEventListener('mousedown', e => { if (!e.composedPath().includes(host)) host.style.display = 'none'; });
   play.onclick = async () => {
     if (play.disabled || !cfg.allowed) return;
-    const id = crypto.randomUUID(); requestId = id;
-    setStatus('准备朗读…', 'checking');
+    const id = crypto.randomUUID(); requestId = id;requests.set(id,{requestId:id,state:'checking',message:'准备朗读…'});
+    renderRequests();
     try {
       const r = await chrome.runtime.sendMessage({ type: 'speak', text: selected, voice: voice.value, requestId: id });
-      if (requestId === id && !r?.ok) setStatus(r?.error || '无法连接扩展', 'error', true);
-    } catch { if (requestId === id) setStatus('扩展已更新，请刷新网页。', 'error', true); }
+      if(!r?.ok){requests.delete(id);renderRequests({state:'error',message:r?.error||'无法连接扩展'});}
+    } catch { requests.delete(id);renderRequests({state:'error',message:'扩展已更新，请刷新网页。'}); }
   };
+  function renderRequests(fallback){const all=[...requests.values()];const m=all.find(x=>x.state==='playing')||all.find(x=>['checking','generating'].includes(x.state))||all.find(x=>x.state==='queued')||fallback;if(!m||count>cfg.maxChars)return;const fuzzy=m.cacheHit&&m.score<1;setStatus(m.message+(fuzzy?'\n实际朗读：'+m.actualText:'')+(m.warning?'\n'+m.warning:''),m.state,m.state==='error'||fuzzy||!!m.warning);}
   chrome.runtime.onMessage.addListener(m => {
+    if(m.type==='voice-preference'){cfg.voice=m.voice;fill();return;}
     if(m.type==='settings-changed'){void refreshSettings();return;}
     if(!cfg.allowed)return;
-    if (m.type === 'voice-start') { requestId = m.requestId; setStatus('准备朗读…', 'checking'); return; }
-    if (m.type !== 'audio-status' || !requestId || m.requestId !== requestId) return;
-    const fuzzy = m.cacheHit && m.score < 1;
-    setStatus(m.message + (fuzzy ? '\n实际朗读：' + m.actualText : '') + (m.warning ? '\n' + m.warning : ''), m.state, m.state === 'error' || fuzzy || !!m.warning);
+    if (m.type === 'voice-start') { requestId = m.requestId;requests.set(m.requestId,{...m,state:'checking',message:'准备朗读…'}); setStatus('准备朗读…', 'checking'); return; }
+    if(m.type!=='audio-status'||!requests.has(m.requestId))return;
+    if(['ended','error','stopped'].includes(m.state))requests.delete(m.requestId);else requests.set(m.requestId,m);
+    renderRequests(m);
+    if(m.state==='queued'){$('.state-hint').textContent='已排队';}
+
   });
 })();

@@ -41,12 +41,13 @@ async function run(m){
       blobUrl=URL.createObjectURL(blob);playing=new Audio(blobUrl);
       playing.onended=()=>{if(!isCurrent())return;report(m,'ended',{...info,message:'播放完成'});stop();};
       playing.onerror=()=>{if(!isCurrent())return;report(m,'error',{message:'音频无法解码或播放，请检查接口输出。'});stop();};
-      playing.play().then(()=>{if(isCurrent())report(m,'playing',info);},reject);
+      playing.play().then(()=>{if(isCurrent())report(m,'playing',{...info,message:'正在播放 · '+info.message});},reject);
     });
   }catch(e){if(!isCurrent())return;active=null;stop();report(m,'error',{message:e.name==='TimeoutError'?'等待语音接口超时；未自动重试。':e.message||'语音失败，请检查本地接口。'});}
 }
 chrome.runtime.onMessage.addListener((m,sender,reply)=>{
   if(sender.id!==chrome.runtime.id || m.target!=='audio')return;
+  if(m.type==='ready'){reply({ok:true,ready:true});return;}
   if(m.type==='speak'){queue.push(m);reply({ok:true,requestId:m.requestId});if(draining)report(m,'queued',{message:'已加入朗读队列，将按点击顺序播放。'});void drain();return;}
   if(m.type==='stop'){invalidate('已停止播放；已提交的生成会完成并缓存。');reply({ok:true});return;}
   const op=m.type==='clear'?cache.clear().then(()=>cache.prune()):cache.prune();

@@ -10,5 +10,7 @@ $('play').onclick=async()=>{id=crypto.randomUUID();$('status').textContent='准�
 $('stop').onclick=()=>{chrome.runtime.sendMessage({type:'stop'});$('status').textContent='已停止播放；已提交的生成会完成并缓存。';};
 $('settings').onclick=()=>chrome.runtime.openOptionsPage();
 
-chrome.storage.onChanged.addListener((c,area)=>{if(area==='local'&&c.settings){s=settings(c.settings.newValue);const current=$('voice').value;$('voice').replaceChildren(...s.voices.map(v=>new Option(v.name,v.id)));$('voice').value=s.voices.some(v=>v.id===current)?current:s.voice;counter();}});
+chrome.storage.onChanged.addListener((c,area)=>{if(area==='local'&&c.settings){s=settings(c.settings.newValue);$('voice').replaceChildren(...s.voices.map(v=>new Option(v.name,v.id)));$('voice').value=s.voice;counter();}});
 void chrome.runtime.sendMessage({type:'refresh-voices'}).catch(()=>{});
+
+$('voice').onchange=async()=>{try{const r=await chrome.runtime.sendMessage({type:'set-voice',voice:$('voice').value});if(!r.ok)throw Error(r.error);}catch(e){$('status').textContent='音色偏好未保存：'+e.message;}};

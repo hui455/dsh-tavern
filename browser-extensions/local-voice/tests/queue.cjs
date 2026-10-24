@@ -8,7 +8,7 @@ try{
 context=await chromium.launchPersistentContext(fs.mkdtempSync(path.join(os.tmpdir(),'voice-queue-')),{channel:'chromium',headless:true,args:['--disable-extensions-except='+ext,'--load-extension='+ext]});
 const worker=context.serviceWorkers()[0]||await context.waitForEvent('serviceworker');const id=new URL(worker.url()).host;const page=await context.newPage();await page.goto('chrome-extension://'+id+'/options.html');
 await page.evaluate(async port=>{await chrome.storage.local.set({settings:{baseUrl:'http://127.0.0.1:'+port+'/v1',model:'fixture',voice:'a',voices:[{id:'a',name:'A'}]}});window.events=[];chrome.runtime.onMessage.addListener((m,sender)=>{if(m.type==='audio-status'&&sender.url?.endsWith('/offscreen.html'))events.push(m)});},server.address().port);
-async function say(text){await page.evaluate(text=>chrome.runtime.sendMessage({type:'speak',text,requestId:text}),text);}
+async function say(text){const reply=await page.evaluate(text=>chrome.runtime.sendMessage({type:'speak',text,requestId:text}),text);assert.equal(reply?.ok,true,reply?.error||'Speech request was not acknowledged');}
 async function until(fn){for(let i=0;i<600;i++){if(await fn())return;await new Promise(r=>setTimeout(r,25));}throw Error('timed out');}
 async function finish(text){await until(()=>pending.has(text));const res=pending.get(text);res.writeHead(200,{'content-type':'audio/wav'});res.end(wav);pending.delete(text);}
 async function state(text,state){await page.waitForFunction(({text,state})=>events.some(e=>e.requestId===text&&e.state===state),{text,state});}
