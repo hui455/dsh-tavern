@@ -13500,7 +13500,7 @@ function bindTavernFontZoom(node, win) {
 				const [forking, setForking] = React.useState(false);
 				const view = liveState.view;
 				const forkTurn = Number(view && view.forkTurnsByMessageId && view.forkTurnsByMessageId[String(props.messageId || "")]) || 0;
-				const canFork = view && isPlayMode(view.mode) && forkTurn > 0;
+				const canFork = view && (isPlayMode(view.mode) || view.mode === "card") && forkTurn > 0;
 				if (!canFork) return null;
 				async function fork() {
 					if (forking) return;
@@ -14953,8 +14953,8 @@ function bindTavernFontZoom(node, win) {
 			React.useEffect(function () {
 				return tavernConversationForkRequests.bind(function (request) {
 					if (busy) throw new Error("当前有其他操作正在进行，请稍后再分叉");
-					const item = history.find(function (entry) { return entry.sessionId === request.sessionId && isPlayMode(entry.mode); });
-					if (!item) throw new Error("找不到当前游玩存档");
+					const item = history.find(function (entry) { return entry.sessionId === request.sessionId && (isPlayMode(entry.mode) || entry.mode === "card"); });
+					if (!item) throw new Error("找不到当前游玩或卡片对话");
 					const summary = summaries[item.sessionId];
 					const title = item.title || (summary && summary.displayTitle ? summary.displayTitle : item.cardName + "的新对话");
 					return forkConversation(item, title, request.turn);

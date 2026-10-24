@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { withCardConversationTurns } from './card-conversation-fork.js'
 
 function clone(value) {
   return value === undefined ? undefined : structuredClone(value)
@@ -33,11 +34,15 @@ export function forkConversationChat(source, options = {}) {
   const sourceTimeline = object(source.timeline)
   const checkpoints = Array.isArray(sourceTimeline.checkpoints) ? sourceTimeline.checkpoints : []
   const latestCheckpoint = checkpoints[checkpoints.length - 1]
-  const chat = clone(source)
+  const chat = clone(withCardConversationTurns(source))
 
   delete chat._storageRevision
   delete chat.regenRecovery
   delete chat.regenInProgress
+  if (chat.mode === 'card') {
+    delete chat.pendingCardChanges
+    if (chat.workspace) chat.workspace.prepared = null
+  }
   chat.id = targetChatId
   chat.sessionId = targetSessionId
   chat.createdAt = now
@@ -84,7 +89,7 @@ export function forkConversationChat(source, options = {}) {
 
 export function assertConversationForkable(chat, options = {}) {
   if (!chat) throw new Error('找不到要分叉的对话')
-  if (!['story', 'script'].includes(str(chat.mode) || 'story')) throw new Error('只有游玩对话可以分叉')
+  if (!['story', 'script', 'card'].includes(str(chat.mode) || 'story')) throw new Error('只有游玩或卡片对话可以分叉')
   // A historical snapshot may have been saved while the source was regenerating a later
   // turn (its pre-regeneration checkpoint). Its content up to the fork turn is settled; only
   // the live source's in-flight work blocks forking.

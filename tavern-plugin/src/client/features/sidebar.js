@@ -830,8 +830,8 @@
 			React.useEffect(function () {
 				return tavernConversationForkRequests.bind(function (request) {
 					if (busy) throw new Error("当前有其他操作正在进行，请稍后再分叉");
-					const item = history.find(function (entry) { return entry.sessionId === request.sessionId && isPlayMode(entry.mode); });
-					if (!item) throw new Error("找不到当前游玩存档");
+					const item = history.find(function (entry) { return entry.sessionId === request.sessionId && (isPlayMode(entry.mode) || entry.mode === "card"); });
+					if (!item) throw new Error("找不到当前游玩或卡片对话");
 					const summary = summaries[item.sessionId];
 					const title = item.title || (summary && summary.displayTitle ? summary.displayTitle : item.cardName + "的新对话");
 					return forkConversation(item, title, request.turn);

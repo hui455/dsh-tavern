@@ -23,9 +23,10 @@ function sourceChat() {
   }
 }
 
-test('分叉只接受没有前台或后台未完成工作的游玩对话', () => {
+test('分叉只接受没有前台或后台未完成工作的游玩或卡片对话', () => {
   assert.equal(assertConversationForkable(sourceChat()), true)
-  assert.throws(() => assertConversationForkable({ ...sourceChat(), mode: 'card' }), /只有游玩对话/)
+  assert.equal(assertConversationForkable({ ...sourceChat(), mode: 'card' }), true)
+  assert.throws(() => assertConversationForkable({ ...sourceChat(), mode: 'unsupported' }), /只有游玩或卡片对话/)
   assert.throws(() => assertConversationForkable(sourceChat(), { agentRunning: true }), /正文仍在生成/)
   const settling = sourceChat()
   settling.timeline.operations.running = { kind: 'body', status: 'completed', background: { phase: 'pending' } }

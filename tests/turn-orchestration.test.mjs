@@ -10,6 +10,7 @@ import { createTurnOrchestrator } from '../tavern-plugin/lib/domain/turn-orchest
 import { createForegroundFrameBuilder, foregroundFrameText } from '../tavern-plugin/lib/domain/agent-input-frame.js'
 import { createContextPlanner } from '../tavern-plugin/lib/domain/context-planner.js'
 import { createForegroundFrameSessionAdapter } from '../tavern-plugin/lib/domain/foreground-frame-session-adapter.js'
+import { conversationStateAtTurn } from '../tavern-plugin/lib/domain/conversation-fork-point.js'
 
 function clone(value) {
   return value === undefined ? undefined : structuredClone(value)
@@ -119,7 +120,7 @@ function harness(mode, options = {}) {
       },
       commit(value, turn) {
         if (value.workspace.prepared && value.workspace.prepared.nativeTurn === turn) {
-          value.workspace.cursor = 1
+          value.workspace.cursor = Number(value.workspace.cursor || 0) + 1
           value.workspace.prepared = null
         }
       }
@@ -156,6 +157,7 @@ function harness(mode, options = {}) {
     settlements,
     createdCards,
     updatedCardPaths,
+    readRevision: async (_id, revision) => clone(history.get(revision)),
     timeline,
     rollback(value = chat) {
       const target = timeline.rollbackTarget({ chat: value })
@@ -200,6 +202,19 @@ test('连续正文回合的实际 Frame 消息不重复基本信息和常驻世�
     assert.doesNotMatch(historyText, /逐轮系统指令/)
     assert.equal(historyText.split('逐轮历史后指令').length - 1, 2)
   }
+})
+
+test('卡片回合保留分支快照，恢复选中回复时的工作台且不带入后续状态', async () => {
+  const run = harness('card', { draft: true })
+  for (const turn of [1, 2, 3]) {
+    await run.orchestrator.prepare({ sessionId: 'session-1', turn, userText: '问题' + turn })
+    await run.orchestrator.finalize({ sessionId: 'session-1', turn, userText: '问题' + turn, assistantText: '回答' + turn })
+  }
+  assert.deepEqual(run.chat().messages.filter(message => message.role === 'assistant').map(message => message.turn), [1, 2, 3])
+  const { state } = await conversationStateAtTurn(run.chat(), 1, run.readRevision)
+  assert.equal(state.messages.length, 2)
+  assert.equal(state.workspace.cursor, 1)
+  assert.equal(run.chat().workspace.cursor, 3)
 })
 
 test('卡片 raw 扩展修改先暂存，最终回复后才写入工作 raw', async () => {

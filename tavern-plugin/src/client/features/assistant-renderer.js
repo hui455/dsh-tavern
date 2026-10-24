@@ -721,7 +721,7 @@
 				const [forking, setForking] = React.useState(false);
 				const view = liveState.view;
 				const forkTurn = Number(view && view.forkTurnsByMessageId && view.forkTurnsByMessageId[String(props.messageId || "")]) || 0;
-				const canFork = view && isPlayMode(view.mode) && forkTurn > 0;
+				const canFork = view && (isPlayMode(view.mode) || view.mode === "card") && forkTurn > 0;
 				if (!canFork) return null;
 				async function fork() {
 					if (forking) return;
