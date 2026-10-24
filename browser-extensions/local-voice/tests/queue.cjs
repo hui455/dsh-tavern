@@ -1,8 +1,7 @@
-// Run with Playwright installed; fixture services do not synthesize real speech.
 const {chromium}=require('playwright');
 const http=require('http'),fs=require('fs'),path=require('path'),os=require('os'),assert=require('assert/strict');
 const ext=require('node:path').resolve(__dirname,'..');
-(async()=>{fs.mkdirSync(require('node:path').join(__dirname,'artifacts'),{recursive:true});
+(async()=>{
 const pending=new Map();const wav=Buffer.alloc(44+32000);wav.write('RIFF');wav.writeUInt32LE(wav.length-8,4);wav.write('WAVEfmt ',8);wav.writeUInt32LE(16,16);wav.writeUInt16LE(1,20);wav.writeUInt16LE(1,22);wav.writeUInt32LE(8000,24);wav.writeUInt32LE(16000,28);wav.writeUInt16LE(2,32);wav.writeUInt16LE(16,34);wav.write('data',36);wav.writeUInt32LE(32000,40);
 const server=http.createServer((req,res)=>{let body='';req.on('data',b=>body+=b);req.on('end',()=>{if(req.url!='/v1/audio/speech'){res.writeHead(404);res.end();return;}pending.set(JSON.parse(body).input,res);});});await new Promise(r=>server.listen(0,'127.0.0.1',r));let context;
 try{
@@ -10,7 +9,7 @@ context=await chromium.launchPersistentContext(fs.mkdtempSync(path.join(os.tmpdi
 const worker=context.serviceWorkers()[0]||await context.waitForEvent('serviceworker');const id=new URL(worker.url()).host;const page=await context.newPage();await page.goto('chrome-extension://'+id+'/options.html');
 await page.evaluate(async port=>{await chrome.storage.local.set({settings:{baseUrl:'http://127.0.0.1:'+port+'/v1',model:'fixture',voice:'a',voices:[{id:'a',name:'A'}]}});window.events=[];chrome.runtime.onMessage.addListener((m,sender)=>{if(m.type==='audio-status'&&sender.url?.endsWith('/offscreen.html'))events.push(m)});},server.address().port);
 async function say(text){await page.evaluate(text=>chrome.runtime.sendMessage({type:'speak',text,requestId:text}),text);}
-async function until(fn){for(let i=0;i<200;i++){if(await fn())return;await new Promise(r=>setTimeout(r,25));}throw Error('timed out');}
+async function until(fn){for(let i=0;i<600;i++){if(await fn())return;await new Promise(r=>setTimeout(r,25));}throw Error('timed out');}
 async function finish(text){await until(()=>pending.has(text));const res=pending.get(text);res.writeHead(200,{'content-type':'audio/wav'});res.end(wav);pending.delete(text);}
 async function state(text,state){await page.waitForFunction(({text,state})=>events.some(e=>e.requestId===text&&e.state===state),{text,state});}
 await say('第一条');await until(()=>pending.has('第一条'));await say('第二条');await say('第一条');

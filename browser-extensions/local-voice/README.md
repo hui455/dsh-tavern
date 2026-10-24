@@ -1,4 +1,4 @@
-# 本地角色朗读 · 浏览器扩展 1.3.1
+# 本地角色朗读 · 浏览器扩展 1.4.0
 
 独立的 Edge / Chromium Manifest V3 扩展，选中文字后显示播放与声音选择两枚图标；直接调用兼容 OpenAI 的语音接口，不需要转接服务。此目录单独安装，不会自动修改酒馆或 GPT-SoVITS 的配置。
 
@@ -50,3 +50,7 @@ register(app, list_characters, generate, GenerateRequest, OUTPUT_ROOT, FFMPEG_PA
 可选适配器测试：安装 `fastapi`、`httpx` 后运行 `python tests/native-api.py`。FFmpeg 默认从 PATH 查找，也可通过进程环境变量 `FFMPEG_PATH` 指定。
 
 设计与截图见 [设计证据](../../docs/design/local-voice-evidence/README.md)。
+
+## 网站白名单
+
+默认仅允许 `http://127.0.0.1:3081` 和 `http://localhost:3081`。在设置的“允许朗读的网站”中逐行填写源地址（协议、域名、端口），不支持通配符。保存立即生效；留空禁止所有网页触发。恢复默认偏好保留白名单。语音接口访问权限与网站白名单独立，非白名单页面与内嵌页面不会触发朗读，扩展弹窗的手动朗读不受影响。

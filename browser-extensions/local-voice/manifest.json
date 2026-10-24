@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "本地角色朗读",
-  "version": "1.3.1",
+  "version": "1.4.0",
   "description": "选中文字，用本地语音接口朗读；角色独立缓存，相似句复用，闲置七天清理。",
   "permissions": [
     "storage",
@@ -22,21 +22,6 @@
     "service_worker": "background.js",
     "type": "module"
   },
-  "content_scripts": [
-    {
-      "matches": [
-        "http://*/*",
-        "https://*/*"
-      ],
-      "js": [
-        "content.js"
-      ],
-      "run_at": "document_idle",
-      "all_frames": true,
-      "match_about_blank": true,
-      "match_origin_as_fallback": true
-    }
-  ],
   "action": {
     "default_title": "本地角色朗读",
     "default_popup": "popup.html"

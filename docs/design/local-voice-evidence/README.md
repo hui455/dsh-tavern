@@ -11,3 +11,8 @@
 - 字数限制、动态角色、7 天闲置清理、顺序播放和停止清队列均保留。
 
 验证入口：browser-extensions/local-voice/tests/，覆盖真实 MV3 浏览器扩展与本地 HTTP 音频 fixture。
+
+## 网站白名单
+
+设置页增加白名单表单，其余样式保留。真实隔离浏览器前后截图为 whitelist-before.png / whitelist-after.png。
+设计：https://www.figma.com/design/w9IjLRAzP3WpJxhga6P22f?node-id=20-3

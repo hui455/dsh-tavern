@@ -1,7 +1,7 @@
 (() => {
   if (window.__localVoiceToolbar) return;
   window.__localVoiceToolbar = true;
-  let cfg = { voice: '胡桃_ZH', voices: [{ id: '胡桃_ZH', name: '胡桃' }], maxChars: 500, toolbar: true };
+  let cfg = { voice: '胡桃_ZH', voices: [{ id: '胡桃_ZH', name: '胡桃' }], maxChars: 500, toolbar: true, allowed: false };
   let selected = '', requestId = null, count = 0, state = 'idle';
   const host = document.createElement('div');
   host.style.cssText = 'position:fixed;z-index:2147483647;display:none;max-width:calc(100vw - 16px)';
@@ -58,10 +58,11 @@
     voice.title = '声音：' + (voice.selectedOptions[0]?.textContent || '未选择') + '（点击切换）';
   }
   fill();
-  chrome.runtime.sendMessage({ type: 'public-settings' }).then(r => { cfg = { ...cfg, ...r }; fill(); validateSelection(); }).catch(() => setStatus('扩展已更新，请刷新网页。', 'error', true));
+  function refreshSettings(){cfg.allowed=false;host.style.display='none';return chrome.runtime.sendMessage({type:'public-settings'}).then(r=>{cfg={...cfg,...r};fill();validateSelection();if(cfg.allowed)show();}).catch(()=>{cfg.allowed=false;});}
+  void refreshSettings();
   voice.addEventListener('change', () => { voice.title = '声音：' + (voice.selectedOptions[0]?.textContent || '未选择') + '（点击切换）'; });
   function show() {
-    if (!cfg.toolbar) return;
+    if (!cfg.toolbar || !cfg.allowed) return;
     const active = document.activeElement;
     if (active === host) return;
     if (active?.tagName === 'INPUT' && ['password', 'email'].includes(active.type)) return;
@@ -87,7 +88,7 @@
   document.addEventListener('keyup', e => { if (e.key === 'Shift') show(); if (e.key === 'Escape') host.style.display = 'none'; });
   document.addEventListener('mousedown', e => { if (!e.composedPath().includes(host)) host.style.display = 'none'; });
   play.onclick = async () => {
-    if (play.disabled) return;
+    if (play.disabled || !cfg.allowed) return;
     const id = crypto.randomUUID(); requestId = id;
     setStatus('准备朗读…', 'checking');
     try {
@@ -96,7 +97,8 @@
     } catch { if (requestId === id) setStatus('扩展已更新，请刷新网页。', 'error', true); }
   };
   chrome.runtime.onMessage.addListener(m => {
-    if (m.type === 'public-settings') { cfg = { ...cfg, ...m.settings }; fill(); validateSelection(); if (!cfg.toolbar) host.style.display = 'none'; return; }
+    if(m.type==='settings-changed'){void refreshSettings();return;}
+    if(!cfg.allowed)return;
     if (m.type === 'voice-start') { requestId = m.requestId; setStatus('准备朗读…', 'checking'); return; }
     if (m.type !== 'audio-status' || !requestId || m.requestId !== requestId) return;
     const fuzzy = m.cacheHit && m.score < 1;

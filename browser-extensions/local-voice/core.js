@@ -2,12 +2,14 @@ export const DAY = 86400000;
 export const TTL = 7 * DAY;
 export const defaults = {
   baseUrl: 'http://127.0.0.1:9875/v1', model: 'gpt-sovits', apiKey: '', voice: '胡桃_ZH',
+  allowedOrigins: ['http://127.0.0.1:3081','http://localhost:3081'],
   maxChars: 500, similarity: 0.92, toolbar: true,
   voices: ['今汐','八重神子','刻晴','卡提希娅','弗洛洛','珂莱塔','珊瑚宫心海','甘雨','神里绫华','胡桃','芙宁娜','茜特菈莉','菲比','雷电将军'].map(name => ({name,id:name+'_ZH'}))
 };
 export function settings(value = {}) {
   const s = {...defaults, ...value};
   if (['http://127.0.0.1:9881/v1','http://localhost:9881/v1'].includes(String(s.baseUrl).replace(/\/$/,''))) { s.baseUrl='http://127.0.0.1:9875/v1';s.apiKey=''; }
+  s.allowedOrigins = normalizeOrigins(s.allowedOrigins);
   const u = new URL(s.baseUrl);
   if (!['http:','https:'].includes(u.protocol) || u.username || u.password || u.search || u.hash) throw Error('请填写不含密钥或查询参数的 HTTP(S) API 根地址。');
   s.baseUrl = u.href.replace(/\/+$/, '');
@@ -44,3 +46,17 @@ export function similarity(a,b,threshold=0.92) {
 }
 export async function digest(text) {return [...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(text)))].map(x=>x.toString(16).padStart(2,'0')).join('');}
 export async function partition(s,voice) {return digest(JSON.stringify([s.baseUrl,s.model,voice,'mp3',await digest(s.apiKey)]));}
+
+export function normalizeOrigins(value) {
+  if (!Array.isArray(value) || value.length > 100) throw Error('白名单最多 100 个网站。');
+  return [...new Set(value.map(entry => {
+    if (typeof entry !== 'string' || entry.includes('*')) throw Error('白名单请填写完整网站地址，不支持通配符。');
+    let u; try { u = new URL(entry.trim()); } catch { throw Error('白名单地址格式错误。'); }
+    if (!['http:','https:'].includes(u.protocol) || u.username || u.password || u.search || u.hash || u.pathname !== '/') throw Error('白名单请只填写协议、域名和端口，例如 http://127.0.0.1:3081');
+    return u.origin;
+  }))];
+}
+export function siteAllowed(url, config) {
+  try { return normalizeOrigins(config?.allowedOrigins ?? defaults.allowedOrigins).includes(new URL(url).origin); }
+  catch { return false; }
+}
