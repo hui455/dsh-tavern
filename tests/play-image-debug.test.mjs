@@ -42,6 +42,7 @@ test('对话身份不依赖标题，排错文本不包含剧情和凭据',()=>{
  const chat={id:'chat-stable',sessionId:'session-new',mode:'card',title:'secret',apiKey:'key',messages:[{role:'assistant',turn:4,text:'private'}]}
  const result=conversationDiagnosticIdentity(chat);assert.equal(result.chatId,'chat-stable');assert.equal(result.turn,4);assert.doesNotMatch(JSON.stringify(result),/secret|private|apiKey/)
  assert.equal(conversationDiagnosticIdentity({...chat,title:'renamed'}).text,result.text)
+ const withImage=conversationDiagnosticIdentity(chat,null,[{turn:3,requestId:'old',updatedAt:30},{turn:4,targetKey:'interaction',requestId:'click',updatedAt:40},{turn:4,targetKey:'target',requestId:'image-request',traceSessionId:'image-agent',updatedAt:20}]);assert.equal(withImage.imageRequestId,'image-request');assert.match(withImage.text,/生图 Agent Session ID: image-agent/)
 })
 test('卡片工具经正式规划、HTTP 生图和附件保存后能读取日志与图片，重复提交不重复计费', {skip:!process.env.DSH_BOOT_MODULE}, async t=>{
  const runtime=await createSceneImageNativeRuntime(process.env.DSH_BOOT_MODULE);t.after(()=>runtime.dispose())

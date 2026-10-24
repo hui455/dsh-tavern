@@ -4495,7 +4495,11 @@ export async function apply(ctx) {
         const settings = await readTavernSettings()
         return { sessions: (await listTavernSessions()).filter(chat => chat.requestMode !== 'sillytavern'), capabilities: { compatibilityMode: false, trustedCardMode: settings.trustedCardMode } }
       }
-      case 'getConversationDiagnosticIdentity': return conversationDiagnosticIdentity(await chatForSession(args?.sessionId), args?.sessionId)
+      case 'getConversationDiagnosticIdentity': {
+        const chat = await chatForSession(args?.sessionId)
+        const journal = chat && sceneDiagnostics ? await sceneDiagnostics.read(chat.id) : undefined
+        return conversationDiagnosticIdentity(chat, args?.sessionId, journal?.records || [])
+      }
       case 'renameConversation': {
         const chat = await chatForSession(args && args.sessionId)
         if (!chat) throw new Error('当前会话没有绑定 Tavern 对话')
