@@ -248,3 +248,7 @@ curl -fsSL https://cdn.jsdelivr.net/gh/flizzywine/dsh-tavern@main/install.sh | D
 [![用户反馈：AI 修改内容方便，变量更新稳定，轻前端游玩体验不错](docs/images/readme/testimonials/ai-editing-and-variable-stability.jpg)](docs/images/readme/testimonials/ai-editing-and-variable-stability.jpg)
 
 </details>
+
+## 独立浏览器朗读扩展
+
+[本地角色朗读](browser-extensions/local-voice/README.md)可单独安装到 Edge / Chromium，直接连接兼容 OpenAI 的本地语音接口。支持双图标划词浮条、动态音色、顺序播放、角色独立缓存与七天闲置清理；它不随酒馆运行时自动安装。
