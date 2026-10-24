@@ -4,6 +4,7 @@ import { projectRuntimeReply } from '../domain/runtime-content-projection.js'
 import { readPlayChatDebugTurn } from '../domain/play-chat-debug.js'
 
 export function registerPlayChatTool({
+  sceneDiagnostics,
   chatForSession,
   modelRequestLog,
   readCardExtensions,
@@ -20,7 +21,7 @@ export function registerPlayChatTool({
     parameters: {
       ref: { type: 'string', description: '关联的游玩记录引用，例如 play-chat:chat-xxx；只有一个引用时可省略' },
       turn: { type: 'integer', description: '要读取的游玩轮次；省略时使用最新一轮' },
-      layer: { type: 'string', enum: ['overview', 'turns', 'conversation', 'input', 'source', 'session', 'display', 'saved-display', 'diagnostics', 'tavern', 'foreground', 'background', 'request', 'worldbook', 'iframe', 'preset', 'context', 'regex'], description: '读取层：小型概览、轮次目录、整场对话、本轮玩家输入、模型原文、Session 文本、当前实时展示、保存时展示快照、当前正则诊断、Tavern 状态、前台 Agent、后台 Agent、真实模型请求、iframe 运行证据、本局预设快照、完整持久上下文或组合正则；默认 overview' },
+      layer: { type: 'string', enum: ['overview', 'turns', 'conversation', 'input', 'source', 'session', 'display', 'saved-display', 'diagnostics', 'tavern', 'foreground', 'background', 'request', 'worldbook', 'iframe', 'preset', 'context', 'regex', 'image'], description: '读取层：小型概览、轮次目录、整场对话、本轮玩家输入、模型原文、Session 文本、当前实时展示、保存时展示快照、当前正则诊断、Tavern 状态、前台 Agent、后台 Agent、真实模型请求、iframe 运行证据、本局预设快照、完整持久上下文或组合正则；默认 overview' },
       offset: { type: 'integer', description: '可选的 1 起始字符位置，默认 1' },
       limit: { type: 'integer', description: '本次最多读取字符数，默认 6000，最大 12000' }
     },
@@ -56,7 +57,7 @@ export function registerPlayChatTool({
       const requestedRef = str(args.ref).trim()
       const reference = requestedRef === ''
         ? (references.length === 1 ? references[0] : null)
-        : references.find(function (item) { return item.path === requestedRef })
+        : references.find(function (item) { return item.path === requestedRef || item.chatId === requestedRef })
       if (reference === null || reference === undefined) throw new Error(references.length > 1 ? '请指定要读取的游玩记录 ref' : '当前卡片工作台没有关联的游玩记录，请从对应游玩对话进入卡片调试')
       const sourceChat = await readChat(reference.chatId)
       if (sourceChat === undefined) throw new Error('游玩记录已不存在')
@@ -79,13 +80,15 @@ export function registerPlayChatTool({
       }
       const foregroundId = str(sourceChat.sessionId)
       const backgroundId = str(sourceChat.timeline && sourceChat.timeline.participants && sourceChat.timeline.participants.background && sourceChat.timeline.participants.background.sessionId) || str(sourceChat.candidateAgent && sourceChat.candidateAgent.sessionId)
+      const selectedTurn = readPlayChatDebugTurn(editorChat, sourceChat, reference, args).turn
       return readPlayChatDebugTurn(editorChat, sourceChat, reference, args, projector, {
+        images: args.layer === 'image' && sceneDiagnostics ? await sceneDiagnostics.read(sourceChat.id) : undefined,
         regex: regexScripts,
         foreground: sessionDebugEvidence(foregroundId),
         background: sessionDebugEvidence(backgroundId),
-        worldbook: args.layer === 'worldbook' ? await worldbookRecallLog.read(sourceChat, args.turn || reference.turn) : undefined,
-        displayRuntime: args.layer === 'iframe' && displayRuntimeStore ? await displayRuntimeStore.read(sourceChat.id, Number(args.turn || reference.turn)) : undefined,
-        requests: await modelRequestLog.evidence(sourceChat.id, args.turn || reference.turn)
+        worldbook: args.layer === 'worldbook' ? await worldbookRecallLog.read(sourceChat, selectedTurn) : undefined,
+        displayRuntime: args.layer === 'iframe' && displayRuntimeStore ? await displayRuntimeStore.read(sourceChat.id, Number(selectedTurn)) : undefined,
+        requests: await modelRequestLog.evidence(sourceChat.id, selectedTurn)
       })
     }
   }))
