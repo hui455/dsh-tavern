@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { withCardConversationTurns, recordCardForkCheckpoint } from '../tavern-plugin/lib/domain/card-conversation-fork.js'
+import { withCardConversationTurns, recordCardForkCheckpoint, discardInheritedCardForkInput } from '../tavern-plugin/lib/domain/card-conversation-fork.js'
 import { forkConversationChat, assertConversationForkable } from '../tavern-plugin/lib/domain/conversation-fork.js'
 import { conversationStateAtTurn } from '../tavern-plugin/lib/domain/conversation-fork-point.js'
 import { retainedRevisions } from '../tavern-plugin/lib/domain/conversation-retention.js'
@@ -62,4 +62,19 @@ test('卡片回合快照去重、限制数量并纳入存档保留链', async ()
   assert.equal(source.timeline.checkpoints.length, 50)
   assert.equal(source.timeline.checkpoints.at(-1).turn, 55)
   assert.deepEqual([...await retainedRevisions(source, async () => undefined, [], { keepTurns: 50 })], [8])
+})
+
+test('历史分支取消继承的排队输入，避免重放原对话下一轮；保留新分支自己的输入', () => {
+  const queued = { id: 'old-future' }, own = { id: 'new-input' }
+  const session = { isOwnSeq: seq => seq >= 5, events: [
+    { seq: 1, type: 'agent/inbox/spliced', data: { inserted: [{ id: 'already-consumed' }] } },
+    { seq: 4, type: 'agent/inbox/spliced', data: { inserted: [queued] } },
+    { seq: 5, type: 'session/end-seed' },
+    { seq: 6, type: 'agent/inbox/spliced', data: { inserted: [own] } }
+  ] }
+  const inbox = { nextTurn: [queued, own], nextStep: [], remove(id) { this.nextTurn = this.nextTurn.filter(message => message.id !== id) } }
+  assert.equal(discardInheritedCardForkInput(session, { inbox }), 1)
+  assert.deepEqual(inbox.nextTurn, [own])
+  assert.equal(discardInheritedCardForkInput(session, { inbox }), 0)
+  assert.throws(() => discardInheritedCardForkInput(session), /输入队列尚未就绪/)
 })

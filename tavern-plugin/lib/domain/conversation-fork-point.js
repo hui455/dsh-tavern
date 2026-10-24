@@ -41,8 +41,9 @@ export async function conversationStateAtTurn(source, requestedTurn, readRevisio
     // A later turn may have prepared tools while the previous reply was still
     // the head. Find the actual commit, before those later workspace changes.
     while (state._storageRevision > 1) {
-      const previous = withCardConversationTurns(await readRevision(state.id, state._storageRevision - 1))
-      if (!previous) throw new Error('该回合历史状态快照不可用，无法安全分叉')
+      const revision = state._storageRevision - 1
+      const previous = withCardConversationTurns(await readRevision(state.id, revision))
+      if (!previous || previous._storageRevision !== revision) throw new Error('该回合历史状态快照不可用，无法安全分叉')
       if (turnOf(lastAssistant(previous)) !== turn) break
       state = previous
     }
