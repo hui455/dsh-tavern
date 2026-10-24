@@ -1,0 +1,10 @@
+{
+  "scope": "isolated DSH, native sessions, real RPC and disk persistence, fixed provider output",
+  "checks": [
+    "two actual card turns committed with native turn ids",
+    "click historical reply forks native history and binds a new card workbench",
+    "branch continues after reload; original later reply is absent and original chat is unchanged",
+    "inherited history can fork again through its parent snapshot"
+  ],
+  "status": "passed"
+}
