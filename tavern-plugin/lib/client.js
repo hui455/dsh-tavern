@@ -4936,7 +4936,7 @@ function tavernModelRefusalNotice(text) {
 		// Parent DOM IDs are shared, but the focused iframe identifies the sender even
 		// after document.write replaces its document. Never fall back to the active chat.
 		const tavernHostComposers = new WeakMap();
-		function installFrameHostComposer(doc, ownsFrame, submit, report) {
+		function installFrameHostComposer(doc, ownsFrame, submit, report, setDraft) {
 		  let state = tavernHostComposers.get(doc);
 		  if (!state) {
 		    if (doc.getElementById('send_textarea') || doc.getElementById('send_but')) return function () {};
@@ -4945,9 +4945,23 @@ function tavernModelRefusalNotice(text) {
 		    const area = doc.createElement('textarea'), button = doc.createElement('button');
 		    area.id = 'send_textarea'; button.id = 'send_but'; button.type = 'button';
 		    controls.append(area, button); doc.body.append(controls);
-		    state = { controls, owners: new Set() };
+		    state = { controls, owners: new Set(), draftRevision: 0 };
 		    tavernHostComposers.set(doc, state);
+		    area.addEventListener('input', function () {
+		      // Resolve the originating frame before setDraft moves focus to the editor.
+		      const owners = Array.from(state.owners).filter(owner => owner.ownsFrame(doc.activeElement));
+		      if (owners.length !== 1) return;
+		      const owner = owners[0], text = String(area.value || '');
+		      const revision = ++state.draftRevision;
+		      if (typeof owner.setDraft !== 'function') return;
+		      Promise.resolve().then(function () {
+		        if (!state.owners.has(owner) || revision !== state.draftRevision) return;
+		        return owner.setDraft(text);
+		      }).catch(owner.report);
+		    });
 		    button.addEventListener('click', function () {
+		      // A synchronous input + send must not reinsert the draft after submission.
+		      state.draftRevision++;
 		      const owners = Array.from(state.owners).filter(function (owner) { return owner.ownsFrame(doc.activeElement); });
 		      if (owners.length !== 1) throw new Error('无法确定开局消息所属的卡片，请重新点击卡片内的开始按钮');
 		      const owner = owners[0], text = String(area.value || '').trim();
@@ -4955,7 +4969,7 @@ function tavernModelRefusalNotice(text) {
 		      owner.sender.send(text).then(function () { if (area.value === text) area.value = ''; }, owner.report);
 		    });
 		  }
-		  const owner = { ownsFrame, report };
+		  const owner = { ownsFrame, report, setDraft };
 		  owner.sender = createTavernFrameLifecycle(doc.defaultView || {}, doc).sender({ submit, valid: () => state.owners.has(owner) });
 		  state.owners.add(owner);
 		  return function () {
@@ -10238,7 +10252,14 @@ function bindTavernFontZoom(node, win) {
                             const executeSlash = configuredSlashExecutor || props.executeSlash;
                             if (!props.sessionId || typeof executeSlash !== "function") throw new Error("当前界面无法触发生成，请刷新页面后重试");
                             return executeSlash("/send " + text + "|/trigger", props.sessionId);
-                        }, function (error) { tavernErrorHub.report("开始旅程", error); }) : function () {};
+                        }, function (error) { tavernErrorHub.report("卡片输入", error); }, function (text) {
+                            if (!listener || visible.key !== desired.key) throw new Error("卡片已失效，请重新打开");
+                            // Preparation pages have no conversation draft to mutate.
+                            if (props.openingPreview) return;
+                            const executeSlash = configuredSlashExecutor || props.executeSlash;
+                            if (!props.sessionId || typeof executeSlash !== "function") throw new Error("当前对话输入框不可用");
+                            return executeSlash("/setinput " + text, props.sessionId);
+                        }) : function () {};
 
 					const unsubscribeTheme = hostWindow.document && typeof hostWindow.MutationObserver === "function"
 						? subscribeTavernHostTheme(hostWindow, function (theme) { sendTextColors(null, theme); }) : null;
