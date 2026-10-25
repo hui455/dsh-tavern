@@ -1,4 +1,5 @@
 import { captureChatHeader } from './chat-persistence.js'
+import { recordCardForkCheckpoint } from './card-conversation-fork.js'
 import { validAnchor } from './round-anchor.js'
 import { CARD_MEMORY_TOOLS } from '../../packages/dsh-tavern-card-memory/index.js'
 import { inputAttachments } from './player-input-content.js'
@@ -403,6 +404,7 @@ export function createTurnOrchestrator(options) {
     if (mode === 'card') {
       // An @ mention only names the file to work on in this message; it is not
       // remembered as a session resource. Only linked play records persist.
+      recordCardForkCheckpoint(chat, turn)
       const state = object(chat.workspace)
       chat.workspace = state
       const prepared = (Array.isArray(state.sourcePaths) ? state.sourcePaths : state.sourceIds || []).length > 0 ? await workspace.prepare(chat, turn) : null
@@ -728,7 +730,7 @@ export function createTurnOrchestrator(options) {
       }
       workspace.commit(chat, turn)
       if (userText !== '') chat.messages.push({ role: 'user', text: userText, ts: now(), native: true })
-      chat.messages.push({ role: 'assistant', text: assistantText, ts: now(), native: true, changed })
+      chat.messages.push({ role: 'assistant', turn, text: assistantText, ts: now(), native: true, changed })
       chat.foregroundError = null
       chat.cardName = created === null ? (str(state.draft && state.draft.name) || '卡片工作台') : created.card.name
       rememberCommit(chat, turn, { mode, userText, requestId, changed }, null, now)
@@ -755,7 +757,7 @@ export function createTurnOrchestrator(options) {
       }
       workspace.commit(chat, turn)
       if (userText !== '') chat.messages.push({ role: 'user', text: userText, ts: now(), native: true })
-      chat.messages.push({ role: 'assistant', text: assistantText, ts: now(), native: true, changed })
+      chat.messages.push({ role: 'assistant', turn, text: assistantText, ts: now(), native: true, changed })
       chat.foregroundError = null
       chat.cardName = savedCard.name
       rememberCommit(chat, turn, { mode, userText, requestId, changed }, null, now)
